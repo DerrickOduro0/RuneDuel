@@ -24,6 +24,9 @@ public sealed class Player
     public bool Banned { get; set; }
     // Set the first time the player's wallet, starter relics and welcome letter are created.
     public DateTime? RealmInitializedAtUtc { get; set; }
+    // When the account was made, and when the player last opened the game.
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? LastSeenAtUtc { get; set; }
 }
 
 public sealed class MatchQueueEntry

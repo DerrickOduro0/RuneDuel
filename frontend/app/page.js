@@ -424,6 +424,16 @@ export default function Home() {
     setScreen(screens.arena);
   }
 
+  // Leaves the queue and starts a practice duel against the Shade, for when nobody else is searching.
+  async function shadeFromSearch(difficulty) {
+    clearInterval(pollRef.current);
+    lastMatchStatus.current = "idle";
+    await request("/matchmaking/queue", { method: "DELETE" }, token).catch(() => {});
+    setMatch({ status: "idle", opponent: null });
+    window.localStorage.removeItem("runeMatchId");
+    await startShade(difficulty);
+  }
+
   async function openCombat(matchId, currentToken = token) {
     setError("");
     try {
@@ -676,7 +686,7 @@ export default function Home() {
       {screen === screens.build && profile && <BuildScreen profile={profile} content={content} realm={realm} busy={realmBusy} notice={realmNotice} onAction={realmAction} onBack={() => setScreen(screens.home)} onNavigate={openRealm} onLogout={logout} />}
       {screen === screens.arena && profile && <ArenaScreen profile={profile} content={content} contentError={contentError} onRetryContent={loadContent} duel={activeDuel} onContinue={continueDuel} onForfeit={forfeitDuel} notice={matchNotice} onBack={() => setScreen(screens.home)} onFind={findMatch} onShade={startShade} challenge={challenge} onCreateChallenge={createChallenge} onCancelChallenge={cancelChallenge} onJoinChallenge={joinChallenge} onNavigate={openRealm} onLogout={logout} />}
       {screen === screens.match && <>
-        <SearchScreen match={match} tips={content?.tips || []} onCancel={cancelMatch} profile={profile} onNavigate={openRealm} onLogout={logout} />
+        <SearchScreen match={match} tips={content?.tips || []} onCancel={cancelMatch} onShade={shadeFromSearch} profile={profile} onNavigate={openRealm} onLogout={logout} />
         {match.status === "found" && <MatchFoundOverlay match={match} error={error} onAccept={acceptMatch} onDecline={cancelMatch} />}
         {matchNotice && <div className="toast" role="status">{matchNotice}</div>}
       </>}
@@ -1216,7 +1226,7 @@ function formatClock(seconds) {
   return `${m}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function SearchScreen({ match, tips, onCancel, profile, onNavigate, onLogout }) {
+function SearchScreen({ match, tips, onCancel, onShade, profile, onNavigate, onLogout }) {
   const [elapsed, setElapsed] = useState(0);
   const [tip, setTip] = useState(0);
   useEffect(() => {
@@ -1230,6 +1240,7 @@ function SearchScreen({ match, tips, onCancel, profile, onNavigate, onLogout }) 
   }, []);
   const found = match.status === "found";
   const casual = match.mode === "casual";
+  const offerShade = casual && !found && elapsed >= 20 && Boolean(onShade);
   return <section className="search-screen menu-world" aria-live="polite">
     {profile && <WorldTopbar profile={profile} onNavigate={onNavigate} onLogout={onLogout} title="Finding a duel" eyebrow={casual ? "CASUAL" : "RANKED"} onBack={onCancel} />}
     <div className="search-card">
@@ -1242,7 +1253,11 @@ function SearchScreen({ match, tips, onCancel, profile, onNavigate, onLogout }) 
       </div>
       <div className="search-clock">{formatClock(elapsed)}</div>
       <p className="search-sub">{elapsed < 15 ? "Looking for mages of similar rank…" : elapsed < 45 ? "Widening the search for a fair match…" : "Still searching. Quiet realm tonight, but the search continues."}</p>
-      {tips.length > 0 && <p className="search-tip"><b>Tip</b> {tips[tip % tips.length]}</p>}
+      {tips.length > 0 && !offerShade && <p className="search-tip"><b>Tip</b> {tips[tip % tips.length]}</p>}
+      {offerShade && <div className="search-shade">
+        <p><b>No one else is searching right now.</b> Duel the Shade, a computer opponent, instead. Practice only: no coins or points.</p>
+        <div className="actions"><button onClick={() => onShade("easy")}>Fight the Shade</button><button className="secondary" onClick={() => onShade("hard")}>Hard Shade</button></div>
+      </div>}
       <button className="secondary" onClick={onCancel}>Cancel search</button>
     </div>
   </section>;

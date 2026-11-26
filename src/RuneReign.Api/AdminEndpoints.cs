@@ -10,7 +10,7 @@ public sealed record AdminItemEdit(
     string? Key, string? Name, string? Kind, string? Icon, string? Description, string? Rarity, string? Image,
     int? PriceCoins, int? PriceGems, bool? InShop,
     int? Power, int? Guard, int? Vigor, int? Focus, int? Grit, int? Edge, int? Pierce, int? Insight, int? Resolve, int? SortOrder);
-public sealed record AdminTalismanEdit(string? Name, string? Icon, string? Effect, string? Drawback, int? PriceCoins, bool? Enabled, bool? Ranked, int? SortOrder);
+public sealed record AdminTalismanEdit(string? Name, string? Icon, string? Effect, string? Drawback, int? PriceCoins, bool? Enabled, bool? Ranked, int? SortOrder, string? Rarity = null, int? Budget = null);
 public sealed record AdminAttributeEdit(string? Name, string? Effect, int? Cap);
 public sealed record AdminSettingEdit(string Value);
 public sealed record AdminPlayerEdit(int? Coins, int? Gems, bool? Banned, bool? IsAdmin);
@@ -72,7 +72,7 @@ public static class AdminEndpoints
                 players = await db.Players.CountAsync(),
                 admins = await db.Players.CountAsync(x => x.IsAdmin),
                 banned = await db.Players.CountAsync(x => x.Banned),
-                newToday = await db.Players.CountAsync(x => x.RealmInitializedAtUtc >= today),
+                newToday = await db.Players.CountAsync(x => x.CreatedAtUtc >= today),
                 duelsToday = await db.CombatMatches.CountAsync(x => x.CompletedAtUtc >= today && x.ShadeDifficulty == null),
                 practiceToday = await db.CombatMatches.CountAsync(x => x.CompletedAtUtc >= today && x.ShadeDifficulty != null),
                 activeDuels = await db.CombatMatches.CountAsync(x => x.CompletedAtUtc == null),
@@ -87,7 +87,7 @@ public static class AdminEndpoints
             Results.Ok(new
             {
                 slots = await db.EquipmentSlots.AsNoTracking().OrderBy(x => x.SortOrder).Select(x => new { x.Key, x.Name }).ToListAsync(),
-                items = (await db.Items.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync()).Select(ItemDto)
+                items = await ItemsWithCounts(db)
             }));
 
         admin.MapPost("/items", async (AdminItemEdit edit, RuneDbContext db) =>
@@ -152,7 +152,11 @@ public static class AdminEndpoints
 
         // ---- Talismans ----
         admin.MapGet("/talismans", async (RuneDbContext db) =>
-            Results.Ok((await db.Talismans.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync()).Select(TalismanDto)));
+        {
+            var stats = await AdminInsights.TalismanStats(db);
+            var rows = await db.Talismans.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync();
+            return Results.Ok(rows.Select(t => TalismanDto(t, stats.GetValueOrDefault(t.Key))));
+        });
 
         admin.MapPut("/talismans/{key}", async (string key, AdminTalismanEdit edit, RuneDbContext db) =>
         {
@@ -166,9 +170,12 @@ public static class AdminEndpoints
             if (edit.Enabled is not null) t.Enabled = edit.Enabled.Value;
             if (edit.Ranked is not null) t.Ranked = edit.Ranked.Value;
             if (edit.SortOrder is not null) t.SortOrder = edit.SortOrder.Value;
+            if (edit.Rarity is not null) { if (!Rarities.Contains(edit.Rarity)) return Error("invalid_rarity", "Rarity must be common, rare or epic.", 400); t.Rarity = edit.Rarity; }
+            if (edit.Budget is not null) { if (edit.Budget is < 0 or > 10) return Error("invalid_budget", "Power points must be between 0 and 10.", 400); t.Budget = edit.Budget.Value; }
             await db.SaveChangesAsync();
             TalismanCatalog.Load(db);
-            return Results.Ok(TalismanDto(t));
+            var stats = await AdminInsights.TalismanStats(db);
+            return Results.Ok(TalismanDto(t, stats.GetValueOrDefault(t.Key)));
         });
 
         // ---- Attributes ----
@@ -213,7 +220,7 @@ public static class AdminEndpoints
                 var term = q.Trim().ToLowerInvariant();
                 query = query.Where(x => x.Username.ToLower().Contains(term) || x.Email.Contains(term));
             }
-            var rows = await query.OrderByDescending(x => x.SkillRating).Take(50).ToListAsync();
+            var rows = await query.OrderByDescending(x => x.LastSeenAtUtc ?? x.CreatedAtUtc).Take(50).ToListAsync();
             return Results.Ok(rows.Select(PlayerDto));
         });
 
@@ -236,6 +243,8 @@ public static class AdminEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(PlayerDto(target));
         });
+
+        AdminInsights.Map(admin);
 
         // ---- Announcements: a letter in every player's mailbox ----
         admin.MapPost("/announce", async (AdminAnnouncement message, RuneDbContext db) =>
@@ -305,14 +314,29 @@ public static class AdminEndpoints
         stats = Equipment.StatsObject(Equipment.Stats(x))
     };
 
-    private static object TalismanDto(TalismanDefinition t) => new
+    private static object TalismanDto(TalismanDefinition t, object? stats) => new
     {
-        t.Key, t.Name, t.Icon, t.Effect, t.Drawback, t.Rarity, t.PriceCoins, t.Enabled, t.Ranked, t.SortOrder,
-        charges = Talismans.Charges(t.Key), active = Talismans.IsActive(t.Key)
+        t.Key, t.Name, t.Icon, t.Effect, t.Drawback, t.Rarity, t.Budget, t.PriceCoins, t.Enabled, t.Ranked, t.SortOrder,
+        rules = AdminInsights.Rules(t.Key),
+        warnings = AdminInsights.TextWarnings(t),
+        stats
     };
 
-    private static object PlayerDto(Player p) => new
+    private static object PlayerDto(Player p) => AdminInsights.PlayerRow(p);
+
+    private static async Task<List<object>> ItemsWithCounts(RuneDbContext db)
     {
-        p.Id, p.Username, p.Email, p.ClassName, p.League, p.Points, p.SkillRating, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems, p.IsAdmin, p.Banned
-    };
+        var counts = await db.PlayerItems.AsNoTracking().GroupBy(x => x.ItemKey)
+            .Select(g => new { Key = g.Key, Owned = g.Count(), Equipped = g.Count(x => x.Equipped) }).ToDictionaryAsync(x => x.Key);
+        return (await db.Items.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync()).Select(x =>
+        {
+            var c = counts.GetValueOrDefault(x.Key);
+            return (object)new
+            {
+                x.Key, x.Name, x.Kind, x.Icon, x.Description, x.Rarity, x.PriceCoins, x.PriceGems, x.InShop, x.IsStarter, x.SortOrder,
+                image = x.Image, imageUrl = Equipment.ImageUrl(x), stats = Equipment.StatsObject(Equipment.Stats(x)),
+                owned = c?.Owned ?? 0, equipped = c?.Equipped ?? 0
+            };
+        }).ToList();
+    }
 }

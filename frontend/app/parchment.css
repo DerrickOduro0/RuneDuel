@@ -1311,3 +1311,9 @@ button{text-shadow:none}
 .wake-notice{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:4px;background:#11151a;color:#e6eaee;font-weight:600;box-shadow:0 8px 24px #0009;max-width:calc(100vw - 32px)}
 .wake-notice i{width:14px;height:14px;border-radius:50%;border:2px solid #f2b632;border-top-color:transparent;animation:wake-spin .8s linear infinite;flex:none}
 @keyframes wake-spin{to{transform:rotate(360deg)}}
+
+/* Offer to fight the Shade when the casual queue is empty */
+.search-shade{display:grid;gap:10px;margin:6px 0 4px;padding:14px 16px;border-radius:6px;background:#ffffff10;text-align:left;max-width:460px}
+.search-shade p{margin:0;color:#d5dbe1;line-height:1.45}
+.search-shade b{color:#fff}
+.search-shade .actions{display:flex;gap:8px;flex-wrap:wrap}

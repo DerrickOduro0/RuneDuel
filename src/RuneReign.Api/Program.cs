@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using RuneReign.Api;
@@ -48,6 +50,20 @@ builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHostedService<WheelWorker>();
+// Limits how fast one address can try to log in or make accounts, so passwords cannot be guessed at speed.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = 429;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync("{\"error\":{\"code\":\"too_many_requests\",\"message\":\"Too many attempts. Wait a minute and try again.\"}}", token);
+    };
+    options.AddPolicy("login", http => RateLimitPartition.GetFixedWindowLimiter(LoginGuard.ClientAddress(http),
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("register", http => RateLimitPartition.GetFixedWindowLimiter(LoginGuard.ClientAddress(http),
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(10), QueueLimit = 0 }));
+});
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment())
@@ -59,6 +75,7 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 // The game itself is the Next.js front end. Opening the server's own address shows a short note instead of a page.
 app.MapGet("/", () => Results.Text("Rune Duel game server is running. Play the game on the front-end site.", "text/plain"));
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 if (connection is not null)
@@ -99,10 +116,15 @@ app.MapPost("/api/v1/auth/register", async (RegisterRequest request, RuneDbConte
         return ApiError("validation_error", "Username, email, and password are required.", 400);
     if (request.Password.Length < 8)
         return ApiError("validation_error", "Password must be at least 8 characters.", 400);
-    if (await db.Players.AnyAsync(x => x.Username == request.Username.Trim() || x.Email == request.Email.Trim().ToLowerInvariant()))
+    // Names are unique whatever their capitals, so "wizzpa" cannot sit beside "Wizzpa".
+    var wantedName = request.Username.Trim();
+    if (wantedName.Length is < 3 or > 20 || !System.Text.RegularExpressions.Regex.IsMatch(wantedName, "^[A-Za-z0-9_]+$"))
+        return ApiError("validation_error", "Usernames are 3-20 letters, numbers or underscores.", 400);
+    var wantedLower = wantedName.ToLowerInvariant();
+    if (await db.Players.AnyAsync(x => x.Username.ToLower() == wantedLower || x.Email == request.Email.Trim().ToLowerInvariant()))
         return ApiError("account_exists", "Username or email is already in use.", 409);
 
-    var player = new Player { Id = Guid.NewGuid(), Username = request.Username.Trim(), Email = request.Email.Trim().ToLowerInvariant(), PasswordHash = "" };
+    var player = new Player { Id = Guid.NewGuid(), Username = wantedName, Email = request.Email.Trim().ToLowerInvariant(), PasswordHash = "", CreatedAtUtc = DateTime.UtcNow, LastSeenAtUtc = DateTime.UtcNow };
     // A name listed in Admin:Users becomes an admin as soon as the account exists, with no restart needed.
     player.IsAdmin = (config["Admin:Users"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Any(x => string.Equals(x, player.Username, StringComparison.OrdinalIgnoreCase));
@@ -110,27 +132,40 @@ app.MapPost("/api/v1/auth/register", async (RegisterRequest request, RuneDbConte
     db.Players.Add(player);
     await db.SaveChangesAsync();
     return Results.Ok(new { token = CreateToken(player, jwtKey), needsClass = true });
-});
+}).RequireRateLimiting("register");
 
 app.MapPost("/api/v1/auth/login", async (LoginRequest request, RuneDbContext db, IPasswordHasher<Player> hasher) =>
 {
     if (string.IsNullOrWhiteSpace(request.Identifier) || string.IsNullOrWhiteSpace(request.Password))
         return ApiError("validation_error", "Username/email and password are required.", 400);
     var identifier = request.Identifier.Trim().ToLowerInvariant();
+    if (LoginGuard.IsLocked(identifier, out var wait))
+        return ApiError("locked", $"Too many wrong passwords. Try again in {Math.Max(1, (int)Math.Ceiling(wait.TotalMinutes))} minutes.", 429);
     var player = await db.Players.FirstOrDefaultAsync(x => x.Email == identifier || x.Username.ToLower() == identifier);
-    if (player is null)
-        return ApiError("unknown_account", "No account matches those details.", 401);
-    if (hasher.VerifyHashedPassword(player, player.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
-        return ApiError("wrong_password", "The password is incorrect.", 401);
+    // One message for both cases, so the login form does not reveal which accounts exist.
+    if (player is null || hasher.VerifyHashedPassword(player, player.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
+    {
+        LoginGuard.Failed(identifier);
+        return ApiError("wrong_login", "That username/email and password do not match.", 401);
+    }
+    LoginGuard.Succeeded(identifier);
     if (player.Banned) return ApiError("banned", "This account has been banned.", 403);
+    player.LastSeenAtUtc = DateTime.UtcNow;
+    await db.SaveChangesAsync();
     return Results.Ok(new { token = CreateToken(player, jwtKey), needsClass = player.ClassName is null });
-});
+}).RequireRateLimiting("login");
 
 app.MapGet("/api/v1/me", async (ClaimsPrincipal user, RuneDbContext db, GameRules r, ServerSettings server) =>
 {
     var player = await CurrentPlayer(user, db);
     if (player is null) return ApiError("not_found", "Player not found.", 404);
     await RealmEndpoints.EnsureRealm(db, player, server);
+    // Opening the game counts as being seen. Saved at most every few minutes.
+    if (player.LastSeenAtUtc is null || DateTime.UtcNow - player.LastSeenAtUtc > TimeSpan.FromMinutes(5))
+    {
+        player.LastSeenAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
     return Results.Ok(PlayerDto(player, r));
 }).RequireAuthorization();
 
@@ -1107,7 +1142,9 @@ static void EnsureSqliteSchema(RuneDbContext db)
     {
         ["TutorialDone"] = "INTEGER NOT NULL DEFAULT 0",
         ["IsAdmin"] = "INTEGER NOT NULL DEFAULT 0",
-        ["Banned"] = "INTEGER NOT NULL DEFAULT 0"
+        ["Banned"] = "INTEGER NOT NULL DEFAULT 0",
+        ["CreatedAtUtc"] = "TEXT NOT NULL DEFAULT '2026-11-01 00:00:00'",
+        ["LastSeenAtUtc"] = "TEXT NULL"
     });
     AddMissingColumns(connection, "Items", new Dictionary<string, string>
     {

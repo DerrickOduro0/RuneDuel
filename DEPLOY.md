@@ -53,6 +53,25 @@ To change the list, edit **Admin__Users** in Render (Environment tab). You can a
 - **Database changes:** after changing the models, add a migration (`dotnet ef migrations add <Name>` in `src/RuneReign.Api`). The server applies new migrations when it starts.
 - **Item pictures** uploaded on the admin page are stored in the database (1 MB each), so redeploys never lose them.
 
+## Backups
+
+`.github/workflows/backup.yml` copies the database every night at 03:17 UTC and keeps each copy for 30 days.
+
+**Set it up once:** on GitHub, open the repository's **Settings > Secrets and variables > Actions > New repository secret**:
+- Name: `SUPABASE_DB_URL`
+- Value: `postgresql://<supabase user>:<password>@<supabase pooler host>:5432/postgres`
+
+Then open the **Actions** tab, pick **Nightly database backup** and click **Run workflow** to check that it works. Each run leaves a file under **Artifacts**.
+When you change the database password, update this secret too.
+
+**To restore a copy:** download the artifact, unzip it, then:
+
+```
+pg_restore --clean --if-exists --no-owner --no-privileges --schema=public -d "postgresql://...your database..." runeduel-YYYY-MM-DD.dump
+```
+
+This replaces everything in the database with the copy, so stop the Render service first (Settings > Suspend) and resume it after.
+
 ## Moving to a paid server later (no data lost)
 
 1. Put the game in maintenance for a few minutes.

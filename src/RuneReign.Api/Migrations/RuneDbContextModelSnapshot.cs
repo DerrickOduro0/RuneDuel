@@ -780,6 +780,9 @@ namespace RuneReign.Api.Migrations
                     b.Property<int>("Coins")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp without time zone");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("text");
@@ -789,6 +792,9 @@ namespace RuneReign.Api.Migrations
 
                     b.Property<bool>("IsAdmin")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastSeenAtUtc")
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int>("League")
                         .HasColumnType("integer");
