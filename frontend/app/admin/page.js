@@ -26,7 +26,7 @@ async function call(path, options = {}) {
 }
 
 const TABS = [
-  ["overview", "Overview"], ["players", "Players"], ["matches", "Matches"], ["items", "Items"], ["talismans", "Talismans"],
+  ["overview", "Overview"], ["maintenance", "Maintenance"], ["players", "Players"], ["matches", "Matches"], ["items", "Items"], ["talismans", "Talismans"],
   ["attributes", "Attributes"], ["settings", "Game settings"], ["announce", "Announce"]
 ];
 const STATS = ["power", "guard", "vigor", "focus", "grit", "edge", "pierce", "insight", "resolve"];
@@ -54,11 +54,13 @@ export default function AdminPage() {
   const [toast, setToast] = useState(null);
   const [openPlayer, setOpenPlayer] = useState(null);
   const [openMatch, setOpenMatch] = useState(null);
+  const [maintenanceOn, setMaintenanceOn] = useState(false);
 
   useEffect(() => {
     call("/me").then((profile) => {
       setMe(profile);
       setState(profile.isAdmin ? "ready" : "denied");
+      if (profile.isAdmin) call("/admin/maintenance").then((m) => setMaintenanceOn(m.on)).catch(() => {});
     }).catch(() => setState("denied"));
   }, []);
 
@@ -77,11 +79,13 @@ export default function AdminPage() {
   return <main className="adm">
     <header className="adm-top">
       <div><span className="adm-eyebrow">RUNE DUEL</span><h1>Admin</h1></div>
+      {maintenanceOn && <button className="adm-maint-pill" onClick={() => setTab("maintenance")}>Maintenance is ON</button>}
       <span className="adm-who">Signed in as <b>{me.username}</b> · <a href="/">Back to the game</a></span>
     </header>
     <nav className="adm-tabs">{TABS.map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
     <section className="adm-body">
       {tab === "overview" && <Overview {...shared} />}
+      {tab === "maintenance" && <MaintenanceTab {...shared} onState={setMaintenanceOn} />}
       {tab === "players" && <Players {...shared} />}
       {tab === "matches" && <Matches {...shared} />}
       {tab === "items" && <Items {...shared} />}
@@ -151,6 +155,91 @@ function Bar({ value }) {
   if (value === null || value === undefined) return <span className="adm-muted">—</span>;
   const tone = value > 58 ? "hot" : value < 42 ? "cold" : "ok";
   return <span className={`adm-bar ${tone}`}><i style={{ width: `${value}%` }} /><b>{value}%</b></span>;
+}
+
+/* ---------- Maintenance ---------- */
+function toLocalInput(value) {
+  if (!value) return "";
+  const d = new Date(value.endsWith?.("Z") || value.includes?.("+") ? value : value + "Z");
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function MaintenanceTab({ notify, onState }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  async function load() {
+    try {
+      const d = await call("/admin/maintenance");
+      setData(d); onState(d.on);
+      setForm({ message: d.message, backAt: toLocalInput(d.backAtUtc), letDuelsFinish: d.letDuelsFinish, notice: d.notice || "" });
+      setError("");
+    } catch (e) { setError(e.message); }
+  }
+  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  async function save(body, done) {
+    setBusy(true);
+    try {
+      const d = await call("/admin/maintenance", { method: "PUT", body: JSON.stringify(body) });
+      setData(d); onState(d.on);
+      setForm((f) => ({ ...f, message: d.message, backAt: toLocalInput(d.backAtUtc), letDuelsFinish: d.letDuelsFinish, notice: d.notice || "" }));
+      notify(done);
+    } catch (e) { notify(e.message, true); }
+    setBusy(false);
+  }
+  const backAtUtc = () => (form.backAt ? new Date(form.backAt).toISOString() : null);
+  function turnOn() {
+    const who = data.duelsInProgress ? ` ${data.duelsInProgress} duel(s) are in progress; ${form.letDuelsFinish ? "they will be allowed to finish" : "they will be cut off"}.` : "";
+    if (!window.confirm(`Turn on maintenance? Players will see the maintenance screen within a minute.${who}`)) return;
+    save({ on: true, message: form.message, backAtUtc: backAtUtc(), letDuelsFinish: form.letDuelsFinish, notice: "" }, "Maintenance is on. Admins can still play to test.");
+  }
+  function turnOff() {
+    if (!window.confirm("Turn maintenance off and open the game to everyone?")) return;
+    save({ on: false }, "Maintenance is off. The game is open.");
+  }
+  if (error) return <p className="adm-error">{error}</p>;
+  if (!data || !form) return <p className="adm-muted">Loading…</p>;
+  return <>
+    <div className="adm-head"><h2>Maintenance</h2>
+      <p className="adm-muted">Use this while you update the server. Players see a "down for maintenance" screen; admins can still use the whole game so you can test before opening it again. It stays on through restarts and redeploys until you turn it off.</p>
+    </div>
+
+    <div className={`adm-maint-state ${data.on ? "on" : "off"}`}>
+      <div><b>{data.on ? "Maintenance is ON" : "The game is open"}</b>
+        <span>{data.on ? `Since ${date(data.startedAtUtc)}${data.backAtUtc ? ` · players are told it is back ${date(data.backAtUtc)}` : ""}` : "Players can play normally."}</span></div>
+      {data.on ? <button disabled={busy} onClick={turnOff}>Turn off and open the game</button> : <button className="danger" disabled={busy} onClick={turnOn}>Turn on maintenance</button>}
+    </div>
+
+    <div className="adm-stats small">
+      <div><b>{data.onlineNow}</b><span>Players online now</span></div>
+      <div><b>{data.duelsInProgress}</b><span>Duels in progress</span></div>
+      <div><b>{data.searching}</b><span>Searching for a match</span></div>
+    </div>
+
+    <div className="adm-panel">
+      <h3>What players see</h3>
+      <div className="adm-grid">
+        <Field label="Message on the maintenance screen" wide><textarea rows={3} maxLength={300} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} /></Field>
+        <Field label="Expected back (your local time, optional)"><input type="datetime-local" value={form.backAt} onChange={(e) => setForm({ ...form, backAt: e.target.value })} /></Field>
+        <Field label="Let duels in progress finish"><Toggle value={form.letDuelsFinish} onChange={(v) => setForm({ ...form, letDuelsFinish: v })} /></Field>
+      </div>
+      <p className="adm-hint">With "let duels finish" on, players already in a duel can play it to the end; nobody can start a new one. Turn it off for updates that change how duels work. Searching players are always taken out of the queue.</p>
+      {data.on && <div className="adm-actions"><button disabled={busy} onClick={() => save({ message: form.message, backAtUtc: backAtUtc(), letDuelsFinish: form.letDuelsFinish }, "Saved. Players see the new text within a minute.")}>Save changes</button></div>}
+    </div>
+
+    <div className="adm-panel">
+      <h3>Warn players first</h3>
+      <p className="adm-muted">Shows a banner at the top of the game for everyone, for example "Maintenance at 18:00 for about 15 minutes. Finish your duels." Players see it within a minute.</p>
+      <div className="adm-inline wrap">
+        <input value={form.notice} maxLength={200} placeholder="Warning text" onChange={(e) => setForm({ ...form, notice: e.target.value })} />
+        <button disabled={busy || !form.notice.trim()} onClick={() => save({ notice: form.notice }, "Warning banner is showing.")}>Show warning</button>
+        {data.notice && <button className="ghost" disabled={busy} onClick={() => save({ notice: "" }, "Warning banner removed.")}>Remove warning</button>}
+      </div>
+      {data.notice && <p className="adm-hint">Showing now: “{data.notice}”. It is hidden automatically while maintenance is on.</p>}
+    </div>
+  </>;
 }
 
 /* ---------- Players ---------- */

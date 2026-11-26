@@ -28,6 +28,7 @@ public static class LiveConfig
         Rules = ContentStore.LoadRules(db, seed);
         Server = ContentStore.LoadServerSettings(db);
         Progression.Load(ContentStore.ReadSettings(db));
+        Maintenance.Load(ContentStore.ReadSettings(db));
         TalismanCatalog.Load(db);
     }
 }
@@ -195,8 +196,19 @@ public static class AdminEndpoints
         });
 
         // ---- Game settings ----
+        // Maintenance rows are managed on their own tab, so they are left out here.
         admin.MapGet("/settings", async (RuneDbContext db) =>
-            Results.Ok(await db.GameSettings.AsNoTracking().OrderBy(x => x.Key).Select(x => new { x.Key, x.Value, x.Description }).ToListAsync()));
+            Results.Ok(await db.GameSettings.AsNoTracking().Where(x => !Maintenance.Keys.Contains(x.Key)).OrderBy(x => x.Key).Select(x => new { x.Key, x.Value, x.Description }).ToListAsync()));
+
+        // ---- Maintenance mode ----
+        admin.MapGet("/maintenance", async (RuneDbContext db) => Results.Ok(await MaintenanceDto(db)));
+        admin.MapPut("/maintenance", async (MaintenanceEdit edit, RuneDbContext db) =>
+        {
+            if (edit.Message is { Length: > 300 }) return Error("too_long", "Keep the message under 300 characters.", 400);
+            if (edit.Notice is { Length: > 200 }) return Error("too_long", "Keep the warning under 200 characters.", 400);
+            await Maintenance.Save(db, edit);
+            return Results.Ok(await MaintenanceDto(db));
+        });
 
         admin.MapPut("/settings/{key}", async (string key, AdminSettingEdit edit, RuneDbContext db) =>
         {
@@ -324,6 +336,25 @@ public static class AdminEndpoints
     };
 
     private static object PlayerDto(Player p) => AdminInsights.PlayerRow(p);
+
+    // The Maintenance tab: the current state, plus who would be affected right now.
+    private static async Task<object> MaintenanceDto(RuneDbContext db)
+    {
+        var since = DateTime.UtcNow.AddMinutes(-3);
+        var duelSince = DateTime.UtcNow.AddHours(-1);
+        return new
+        {
+            on = Maintenance.On,
+            message = Maintenance.Message,
+            backAtUtc = Maintenance.BackAtUtc,
+            letDuelsFinish = Maintenance.LetDuelsFinish,
+            notice = Maintenance.Notice,
+            startedAtUtc = Maintenance.StartedAtUtc,
+            onlineNow = await db.Players.CountAsync(x => x.LastSeenAtUtc >= since),
+            duelsInProgress = await db.CombatMatches.CountAsync(x => x.CompletedAtUtc == null && x.AcceptedA && x.AcceptedB && x.AcceptDeadlineUtc == null && x.CreatedAtUtc > duelSince),
+            searching = await db.MatchQueue.CountAsync(x => x.CombatMatchId == null)
+        };
+    }
 
     private static async Task<List<object>> ItemsWithCounts(RuneDbContext db)
     {

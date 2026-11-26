@@ -15,6 +15,44 @@ const screens = {
 };
 
 
+// Maintenance mode and the warning banner, checked every minute (also before signing in).
+const maintenanceListeners = new Set();
+let maintenanceState = { maintenance: false, message: null, backAtUtc: null, notice: null };
+function setMaintenanceState(value) { maintenanceState = value; maintenanceListeners.forEach((listener) => listener(value)); }
+function useMaintenanceState() {
+  const [value, setValue] = useState(maintenanceState);
+  useEffect(() => { maintenanceListeners.add(setValue); return () => maintenanceListeners.delete(setValue); }, []);
+  return value;
+}
+async function checkStatus() {
+  try {
+    const response = await fetch("/api/v1/status");
+    if (response.ok) setMaintenanceState(await response.json());
+  } catch { /* offline: the next check will try again */ }
+}
+function localTime(value) {
+  if (!value) return null;
+  const date = new Date(value.endsWith?.("Z") || value.includes?.("+") ? value : `${value}Z`);
+  return date.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// Players see this instead of the game while maintenance is on. It checks again by itself.
+function MaintenanceScreen({ state, onLogout, onAdminSignIn }) {
+  const [checking, setChecking] = useState(false);
+  async function again() { setChecking(true); await checkStatus(); setTimeout(() => setChecking(false), 600); }
+  return <div className="maintenance-screen" role="alert">
+    <div className="maintenance-card">
+      <span className="maintenance-icon" aria-hidden="true"><Ico name="gear" size={42} /></span>
+      <h1>Down for maintenance</h1>
+      <p>{state.message || "Rune Duel is being updated. We will be back shortly."}</p>
+      {state.backAtUtc && <p className="maintenance-back">Expected back: <b>{localTime(state.backAtUtc)}</b></p>}
+      <p className="muted">This page checks every minute and opens the game as soon as it is back.</p>
+      <div className="actions"><button onClick={again} disabled={checking}>{checking ? "Checking…" : "Check now"}</button>{onLogout && <button className="secondary" onClick={onLogout}>Log out</button>}</div>
+      {onAdminSignIn && <button type="button" className="link-button maintenance-admin" onClick={onAdminSignIn}>Admin sign in</button>}
+    </div>
+  </div>;
+}
+
 // The free game server sleeps when nobody plays and takes about a minute to wake.
 // While it wakes, the host answers with a gateway error, so reads are retried and a notice is shown.
 const wakeListeners = new Set();
@@ -38,6 +76,17 @@ async function request(path, options = {}, token) {
       });
     } catch (networkError) {
       response = null;
+    }
+    // Maintenance also answers 503, but it is on purpose: show the maintenance screen instead of waiting.
+    if (response?.status === 503) {
+      const body = await response.clone().json().catch(() => null);
+      if (body?.error?.code === "maintenance") {
+        setWaking(false);
+        setMaintenanceState({ ...maintenanceState, maintenance: true, message: body.error.message, backAtUtc: body.error.backAtUtc });
+        const error = new Error(body.error.message || "The game is down for maintenance.");
+        error.status = 503; error.code = "maintenance";
+        throw error;
+      }
     }
     const sleeping = !response || WAKE_STATUSES.has(response.status);
     if (!sleeping || !retry || Date.now() - started > 90000) break;
@@ -292,7 +341,9 @@ export default function Home() {
         setScreen(screens.match);
         startMatchPolling(storedToken);
       }
-    }).catch(() => {
+    }).catch((error) => {
+      // Only a rejected login signs the player out. Maintenance or a sleeping server keeps them signed in for later.
+      if (error?.code === "maintenance" || !(error?.status === 401 || error?.status === 403 || error?.status === 404)) return;
       window.localStorage.removeItem("runeToken");
       window.localStorage.removeItem("runeScreen");
       window.localStorage.removeItem("runeMatchId");
@@ -448,6 +499,22 @@ export default function Home() {
     window.localStorage.removeItem("runeMatchId");
     setScreen(screens.arena);
   }
+
+  // Maintenance: check now and every minute. When it ends, reload the player so the game picks up where it was.
+  const maintenance = useMaintenanceState();
+  useEffect(() => {
+    checkStatus();
+    const timer = setInterval(checkStatus, 60000);
+    return () => clearInterval(timer);
+  }, []);
+  const wasDown = useRef(false);
+  useEffect(() => {
+    if (maintenance.maintenance) { wasDown.current = true; return; }
+    // Back from maintenance: load the player again (their first load may have been refused).
+    if (wasDown.current) { wasDown.current = false; if (token) loadProfile(token).catch(() => {}); }
+  }, [maintenance.maintenance]);
+  const [noticeHidden, setNoticeHidden] = useState("");
+  const [adminSignIn, setAdminSignIn] = useState(false);
 
   // The profile panel (yours or another player's).
   const [profileView, setProfileView] = useState(null);
@@ -740,6 +807,9 @@ export default function Home() {
   return (
     <main className="game-shell">
       <WakeNotice />
+      {maintenance.maintenance && !profile?.isAdmin && screen !== screens.combat && !(adminSignIn && !profile) && <MaintenanceScreen state={maintenance} onLogout={profile ? () => { setAdminSignIn(false); logout(); } : null} onAdminSignIn={profile ? null : () => setAdminSignIn(true)} />}
+      {maintenance.maintenance && profile?.isAdmin && <div className="maintenance-strip">Maintenance mode is on: players cannot play. <a href="/admin">Open admin</a></div>}
+      {!maintenance.maintenance && maintenance.notice && noticeHidden !== maintenance.notice && <div className="maintenance-notice" role="status"><span><b>Notice</b> {maintenance.notice}</span><button className="secondary" onClick={() => setNoticeHidden(maintenance.notice)} aria-label="Hide notice">×</button></div>}
       {profile && screen !== screens.combat && screen !== screens.match && <FriendInviteBanner onAnswer={answerInvite} />}
       {profile && profileView && <ProfilePanel token={token} username={profileView.username} me={profile} onClose={() => setProfileView(null)} onChanged={() => refreshProfile()} onLogout={() => { setProfileView(null); logout(); }} />}
       <header className="game-header">

@@ -73,10 +73,13 @@ if (app.Environment.IsDevelopment())
 }
 // Lets the host check the server is up without touching the database.
 app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
+// Public: the game checks this every minute for maintenance and its warning banner.
+app.MapGet("/api/v1/status", () => Results.Ok(Maintenance.Status()));
 // The game itself is the Next.js front end. Opening the server's own address shows a short note instead of a page.
 app.MapGet("/", () => Results.Text("Rune Duel game server is running. Play the game on the front-end site.", "text/plain"));
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMaintenance();
 app.UseAuthorization();
 if (connection is not null)
 {
