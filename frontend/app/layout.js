@@ -1,7 +1,4 @@
-import "@fontsource-variable/manrope/wght.css";
-import "@fontsource/cinzel/600.css";
-import "@fontsource/cinzel/700.css";
-import "@fontsource/noto-sans-runic/400.css";
+import "./fonts.css";
 import "./globals.css";
 import "./parchment.css";
 import "./refine.css";
