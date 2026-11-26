@@ -18,6 +18,10 @@ public sealed class Player
     public int Gems { get; set; }
     public int StoryChapter { get; set; }
     public bool TutorialDone { get; set; }
+    // Admins can open the admin page. Set from the Admin:Users setting when the server starts.
+    public bool IsAdmin { get; set; }
+    // A banned player cannot log in or use the game.
+    public bool Banned { get; set; }
     // Set the first time the player's wallet, starter relics and welcome letter are created.
     public DateTime? RealmInitializedAtUtc { get; set; }
 }
@@ -88,6 +92,16 @@ public sealed class CombatMatch
     public string BonusesB { get; set; } = "";
     // Set for a practice duel against the Shade ("easy" or "hard"). Practice duels never change league, rating or quests.
     public string? ShadeDifficulty { get; set; }
+    // Talismans, fixed when the duel starts. Uses = charges spent; Flags = short-lived state;
+    // Fired = the talisman that went off in the last round (shown in the round banner).
+    public string? TalismanA { get; set; }
+    public string? TalismanB { get; set; }
+    public int TalismanUsesA { get; set; }
+    public int TalismanUsesB { get; set; }
+    public string TalismanFlagsA { get; set; } = "";
+    public string TalismanFlagsB { get; set; } = "";
+    public string? TalismanFiredA { get; set; }
+    public string? TalismanFiredB { get; set; }
     // "ranked", "casual" or "friend". Only ranked duels change league points and rating.
     public string Mode { get; set; } = DuelMode.Ranked;
     // Rematch requests after the duel ends (casual and friend duels only), and the duel they started.
@@ -300,6 +314,34 @@ public sealed class PlayerSettings
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+// A talisman for sale or crafted. Its behaviour is in RuneReign.Domain.Talismans, keyed by Key;
+// these rows hold the names, text, price and an on/off switch for balance.
+public sealed class TalismanDefinition
+{
+    public required string Key { get; set; }
+    public required string Name { get; set; }
+    public required string Effect { get; set; }
+    public string Drawback { get; set; } = "";
+    public string Icon { get; set; } = "\u2727";
+    public string Rarity { get; set; } = "common";
+    // Power points against the budget (Common 3, Rare 4, Epic 5).
+    public int Budget { get; set; } = 3;
+    public int PriceCoins { get; set; }
+    public bool Enabled { get; set; } = true;
+    // Allowed in ranked duels.
+    public bool Ranked { get; set; } = true;
+    public int SortOrder { get; set; }
+}
+
+public sealed class PlayerTalisman
+{
+    public Guid Id { get; set; }
+    public Guid PlayerId { get; set; }
+    public required string TalismanKey { get; set; }
+    public bool Equipped { get; set; }
+    public DateTime AcquiredAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class PlayerItem
 {
     public Guid Id { get; set; }
@@ -353,6 +395,8 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
     public DbSet<StoryChapterDefinition> StoryChapters => Set<StoryChapterDefinition>();
     public DbSet<PlayerSettings> PlayerSettings => Set<PlayerSettings>();
     public DbSet<PlayerItem> PlayerItems => Set<PlayerItem>();
+    public DbSet<TalismanDefinition> Talismans => Set<TalismanDefinition>();
+    public DbSet<PlayerTalisman> PlayerTalismans => Set<PlayerTalisman>();
     public DbSet<ObjectiveClaim> ObjectiveClaims => Set<ObjectiveClaim>();
     public DbSet<PlayerMessage> PlayerMessages => Set<PlayerMessage>();
 
@@ -406,6 +450,21 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
         builder.Entity<PlayerSettings>().HasKey(x => x.PlayerId);
         builder.Entity<PlayerItem>().Property(x => x.ItemKey).HasMaxLength(64);
         builder.Entity<PlayerItem>().HasIndex(x => new { x.PlayerId, x.ItemKey }).IsUnique();
+        builder.Entity<TalismanDefinition>().HasKey(x => x.Key);
+        builder.Entity<TalismanDefinition>().Property(x => x.Key).HasMaxLength(64);
+        builder.Entity<TalismanDefinition>().Property(x => x.Name).HasMaxLength(64);
+        builder.Entity<TalismanDefinition>().Property(x => x.Effect).HasMaxLength(300);
+        builder.Entity<TalismanDefinition>().Property(x => x.Drawback).HasMaxLength(300);
+        builder.Entity<TalismanDefinition>().Property(x => x.Icon).HasMaxLength(16);
+        builder.Entity<TalismanDefinition>().Property(x => x.Rarity).HasMaxLength(16);
+        builder.Entity<PlayerTalisman>().Property(x => x.TalismanKey).HasMaxLength(64);
+        builder.Entity<PlayerTalisman>().HasIndex(x => new { x.PlayerId, x.TalismanKey }).IsUnique();
+        builder.Entity<CombatMatch>().Property(x => x.TalismanA).HasMaxLength(64);
+        builder.Entity<CombatMatch>().Property(x => x.TalismanB).HasMaxLength(64);
+        builder.Entity<CombatMatch>().Property(x => x.TalismanFlagsA).HasMaxLength(64);
+        builder.Entity<CombatMatch>().Property(x => x.TalismanFlagsB).HasMaxLength(64);
+        builder.Entity<CombatMatch>().Property(x => x.TalismanFiredA).HasMaxLength(64);
+        builder.Entity<CombatMatch>().Property(x => x.TalismanFiredB).HasMaxLength(64);
         builder.Entity<ObjectiveClaim>().Property(x => x.ObjectiveKey).HasMaxLength(64);
         builder.Entity<ObjectiveClaim>().Property(x => x.PeriodKey).HasMaxLength(16);
         builder.Entity<ObjectiveClaim>().HasIndex(x => new { x.PlayerId, x.ObjectiveKey, x.PeriodKey }).IsUnique();

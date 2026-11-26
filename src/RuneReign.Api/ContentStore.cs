@@ -229,6 +229,22 @@ public static class ContentStore
         foreach (var stored in db.Items.Where(x => x.Rarity == "" || x.Rarity == null).ToList())
             stored.Rarity = rarityByKey.GetValueOrDefault(stored.Key, "common");
 
+        // Starter talismans. Behaviour lives in RuneReign.Domain.Talismans; this is the shop text and price.
+        var talismans = new[]
+        {
+            new TalismanDefinition { Key = Talismans.LuckyKnot, Name = "Lucky Knot", Icon = "\u221e", Effect = "Your first reroll each duel is free.", Drawback = "", Budget = 2, PriceCoins = 400, SortOrder = 0 },
+            new TalismanDefinition { Key = Talismans.MirrorShard, Name = "Mirror Shard", Icon = "\u25c8", Effect = "Once per duel, flip your D8 to its opposite face (Bolt \u2194 Nova, Wave \u2194 Echo, Ward \u2194 Surge, Drain \u2194 Curse).", Drawback = "Costs 1 mana.", Budget = 3, PriceCoins = 500, SortOrder = 1 },
+            new TalismanDefinition { Key = Talismans.EmberCoal, Name = "Ember Coal", Icon = "\u2668", Effect = "Every time you lose a clash, gain 1 mana.", Drawback = "Start the duel with 1 less mana.", Budget = 3, PriceCoins = 450, SortOrder = 2 },
+            new TalismanDefinition { Key = Talismans.IronSeal, Name = "Iron Seal", Icon = "\u26e8", Effect = "The first time you lose a clash, the winner gets no +2 bonus.", Drawback = "Start the duel at 28 HP.", Budget = 3, PriceCoins = 550, SortOrder = 3 },
+            new TalismanDefinition { Key = Talismans.GamblersCoin, Name = "Gambler's Coin", Icon = "\u25ce", Effect = "Twice per duel, reroll your D6 and D8 together.", Drawback = "Costs 1 HP each time.", Budget = 3, PriceCoins = 500, SortOrder = 4 },
+            new TalismanDefinition { Key = Talismans.PatientStone, Name = "Patient Stone", Icon = "\u25c9", Effect = "Twice per duel, gain 1 mana now.", Drawback = "No reroll, pick or shift that turn.", Budget = 3, PriceCoins = 400, SortOrder = 5 },
+            new TalismanDefinition { Key = Talismans.SecondWind, Name = "Second Wind", Icon = "\u2740", Effect = "The first time your HP drops to 10 or less, gain 1 mana and your next reroll is free.", Drawback = "", Budget = 3, PriceCoins = 450, SortOrder = 6 },
+            new TalismanDefinition { Key = Talismans.TwinMark, Name = "Twin Mark", Icon = "\u264a", Effect = "Once per duel, any state you declare this turn earns the +2 clash bonus.", Drawback = "Costs 2 mana.", Budget = 3, PriceCoins = 600, SortOrder = 7 }
+        };
+        var existingTalismans = db.Talismans.Select(x => x.Key).ToHashSet();
+        foreach (var talisman in talismans.Where(x => !existingTalismans.Contains(x.Key)))
+            db.Talismans.Add(talisman);
+
         if (!db.Objectives.Any())
         {
             db.Objectives.AddRange(
@@ -346,6 +362,7 @@ public static class ContentStore
             states = states.Select(x => new { x.Name, x.Beats, x.LosesTo }),
             tips = tips.Select(x => Fill(x.Text, tokens)),
             attributes = await db.Attributes.AsNoTracking().OrderBy(x => x.SortOrder).Select(x => new { x.Key, x.Name, x.Icon, x.Effect, x.Cap }).ToListAsync(),
+            talismans = await db.Talismans.AsNoTracking().Where(x => x.Enabled).OrderBy(x => x.SortOrder).Select(x => new { x.Key, x.Name, x.Icon, x.Effect, x.Drawback, x.Rarity, x.PriceCoins, x.Ranked }).ToListAsync(),
             slots = await db.EquipmentSlots.AsNoTracking().OrderBy(x => x.SortOrder).Select(x => new { x.Key, x.Name }).ToListAsync(),
             arenaModes = modes.Select(x => new { x.Key, x.Title, x.Tag, description = Fill(x.Description, tokens), x.Icon, live = x.IsLive }),
             rules = new

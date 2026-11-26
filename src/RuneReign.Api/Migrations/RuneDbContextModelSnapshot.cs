@@ -287,6 +287,38 @@ namespace RuneReign.Api.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<string>("TalismanA")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("TalismanB")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("TalismanFiredA")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("TalismanFiredB")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("TalismanFlagsA")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("TalismanFlagsB")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("TalismanUsesA")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TalismanUsesB")
+                        .HasColumnType("int");
+
                     b.Property<int>("Turn")
                         .HasColumnType("int");
 
@@ -739,6 +771,9 @@ namespace RuneReign.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<bool>("Banned")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<string>("ClassName")
                         .HasColumnType("longtext");
 
@@ -751,6 +786,9 @@ namespace RuneReign.Api.Migrations
 
                     b.Property<int>("Gems")
                         .HasColumnType("int");
+
+                    b.Property<bool>("IsAdmin")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<int>("League")
                         .HasColumnType("int");
@@ -883,6 +921,34 @@ namespace RuneReign.Api.Migrations
                     b.ToTable("PlayerSettings");
                 });
 
+            modelBuilder.Entity("RuneReign.Api.PlayerTalisman", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("AcquiredAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("Equipped")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("TalismanKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlayerId", "TalismanKey")
+                        .IsUnique();
+
+                    b.ToTable("PlayerTalismans");
+                });
+
             modelBuilder.Entity("RuneReign.Api.SpellForm", b =>
                 {
                     b.Property<string>("Name")
@@ -924,6 +990,57 @@ namespace RuneReign.Api.Migrations
                     b.HasKey("Number");
 
                     b.ToTable("StoryChapters", (string)null);
+                });
+
+            modelBuilder.Entity("RuneReign.Api.TalismanDefinition", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("Budget")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Drawback")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<string>("Effect")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Icon")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("PriceCoins")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Ranked")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Rarity")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("Talismans");
                 });
 #pragma warning restore 612, 618
         }

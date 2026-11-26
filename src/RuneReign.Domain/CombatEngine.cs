@@ -15,7 +15,14 @@ public sealed record CombatResult(
     string Log,
     string? Winner,
     string? Loser,
-    bool IsDraw);
+    bool IsDraw)
+{
+    // Which side won the clash (0 = A, 1 = B), or null when both declared the same state.
+    public int? ClashWinner { get; init; }
+    // True when that side's Iron Seal cancelled the winner's +2 this round.
+    public bool BonusBlockedByA { get; init; }
+    public bool BonusBlockedByB { get; init; }
+}
 
 public static class CombatEngine
 {
@@ -95,8 +102,13 @@ public static class CombatEngine
     public static CombatResult Resolve(
         string classA, CombatAction actionA, CombatPlayerState stateA,
         string classB, CombatAction actionB, CombatPlayerState stateB,
-        CombatBonuses? bonusA = null, CombatBonuses? bonusB = null)
+        CombatBonuses? bonusA = null, CombatBonuses? bonusB = null,
+        TalismanRoundEffects? talismanA = null, TalismanRoundEffects? talismanB = null)
     {
+        var talA = talismanA ?? TalismanRoundEffects.None;
+        var talB = talismanB ?? TalismanRoundEffects.None;
+        int? clashWinner = null;
+        var blocked = new[] { false, false };
         var manaA = Math.Min(ManaCap, Math.Max(0, stateA.Mana) + 1);
         var manaB = Math.Min(ManaCap, Math.Max(0, stateB.Mana) + 1);
         var gearA = bonusA ?? CombatBonuses.None;
@@ -112,7 +124,17 @@ public static class CombatEngine
         {
             var winner = Beats[actionA.State] == actionB.State ? 0 : 1;
             var loser = 1 - winner;
-            if (FormTypes[winner == 0 ? actionA.Form : actionB.Form] == (winner == 0 ? actionA.State : actionB.State))
+            clashWinner = winner;
+            var committed = FormTypes[winner == 0 ? actionA.Form : actionB.Form] == (winner == 0 ? actionA.State : actionB.State)
+                || (winner == 0 ? talA : talB).CommitAnyState;
+            // Iron Seal: the loser cancels the winner's bonus once per duel.
+            if (committed && (loser == 0 ? talA : talB).BlockWinnerBonusIfLost)
+            {
+                committed = false;
+                blocked[loser] = true;
+                logs.Add($"Mage {(loser == 0 ? "A" : "B")}'s Iron Seal blocked the triangle bonus.");
+            }
+            if (committed)
             {
                 damage[winner] = Math.Min(12, damage[winner] + 2);
                 shield[winner] = Math.Min(8, shield[winner] + 2);
@@ -134,7 +156,12 @@ public static class CombatEngine
         var nextB = Apply(classB, stateB, damage[0], shield[1], b.Heal, b.SelfDamage + recoil[1], actionA.Form == "Wave", manaB - b.ManaSpent, gearA.Pierce);
         var isDraw = nextA.Hp <= 0 && nextB.Hp <= 0;
         var winnerId = isDraw ? null : nextA.Hp <= 0 ? "B" : nextB.Hp <= 0 ? "A" : null;
-        return new CombatResult(nextA, nextB, string.Join(" ", logs), winnerId, winnerId is null ? null : winnerId == "A" ? "B" : "A", isDraw);
+        return new CombatResult(nextA, nextB, string.Join(" ", logs), winnerId, winnerId is null ? null : winnerId == "A" ? "B" : "A", isDraw)
+        {
+            ClashWinner = clashWinner,
+            BonusBlockedByA = blocked[0],
+            BonusBlockedByB = blocked[1]
+        };
     }
 
     // Spells land at the same time, so a shield raised this turn blocks this turn's damage.

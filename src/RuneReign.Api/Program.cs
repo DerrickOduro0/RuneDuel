@@ -25,16 +25,9 @@ else
 }
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "development-only-change-this-jwt-key-32-chars";
-builder.Services.AddSingleton(sp =>
-{
-    using var scope = sp.CreateScope();
-    return ContentStore.LoadRules(scope.ServiceProvider.GetRequiredService<RuneDbContext>(), seedRules);
-});
-builder.Services.AddSingleton(sp =>
-{
-    using var scope = sp.CreateScope();
-    return ContentStore.LoadServerSettings(scope.ServiceProvider.GetRequiredService<RuneDbContext>());
-});
+// Rules and settings come from the database and are reloaded when an admin saves a change.
+builder.Services.AddTransient(_ => LiveConfig.Rules);
+builder.Services.AddTransient(_ => LiveConfig.Server);
 builder.Services.AddSingleton<IPasswordHasher<Player>, PasswordHasher<Player>>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
@@ -72,9 +65,22 @@ else
     EnsureSqliteSchema(developmentDb);
 }
 using (var seedScope = app.Services.CreateScope())
-    ContentStore.Seed(seedScope.ServiceProvider.GetRequiredService<RuneDbContext>(), seedRules);
+{
+    var seedDb = seedScope.ServiceProvider.GetRequiredService<RuneDbContext>();
+    ContentStore.Seed(seedDb, seedRules);
+    LiveConfig.Reload(seedDb, seedRules);
+    // Admin:Users (comma separated usernames) are the accounts that can open the admin page.
+    var adminNames = (app.Configuration["Admin:Users"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(x => x.ToLowerInvariant()).ToHashSet();
+    if (adminNames.Count > 0)
+    {
+        foreach (var admin in seedDb.Players.Where(x => adminNames.Contains(x.Username.ToLower())).ToList()) admin.IsAdmin = true;
+        seedDb.SaveChanges();
+    }
+}
 
 app.MapRealmEndpoints();
+app.MapAdminEndpoints(seedRules);
 
 app.MapGet("/api/v1/classes", (GameRules r) => Results.Ok(r.Classes));
 
@@ -104,6 +110,7 @@ app.MapPost("/api/v1/auth/login", async (LoginRequest request, RuneDbContext db,
         return ApiError("unknown_account", "No account matches those details.", 401);
     if (hasher.VerifyHashedPassword(player, player.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
         return ApiError("wrong_password", "The password is incorrect.", 401);
+    if (player.Banned) return ApiError("banned", "This account has been banned.", 403);
     return Results.Ok(new { token = CreateToken(player, jwtKey), needsClass = player.ClassName is null });
 });
 
@@ -286,7 +293,7 @@ app.MapPost("/api/v1/shade/start", async (StartShadeRequest request, ClaimsPrinc
         LastSeenB = now,
         ShadeDifficulty = difficulty,
         LastLog = "The Shade rises from the mist. Read the dice, then declare your state."
-    };
+    }.WithTalismans(difficulty == ShadeBot.Tutorial ? null : await EquippedTalisman(db, player.Id, "practice"), null);
     RollTurnDice(match);
     db.CombatMatches.Add(match);
     await db.SaveChangesAsync();
@@ -422,10 +429,23 @@ app.MapPost("/api/v1/combat/{matchId:guid}/action", async (CombatActionRequest r
         var b = new CombatAction(match.RuneB!, match.FormB!, match.PendingB, match.PendingD8AdjustmentB);
         if (!CombatEngine.IsValidAction(match.ClassA, a) || !CombatEngine.IsValidAction(match.ClassB, b))
             return ApiError("invalid_roll", "The server generated an invalid combat roll.", 500);
+        var talA = match.Talisman(true);
+        var talB = match.Talisman(false);
         var result = CombatEngine.Resolve(match.ClassA, a, new CombatPlayerState(match.HpA, match.ShieldA, match.ManaA), match.ClassB, b, new CombatPlayerState(match.HpB, match.ShieldB, match.ManaB),
-            Equipment.ToBonuses(Equipment.Decode(match.BonusesA)), Equipment.ToBonuses(Equipment.Decode(match.BonusesB)));
+            Equipment.ToBonuses(Equipment.Decode(match.BonusesA)), Equipment.ToBonuses(Equipment.Decode(match.BonusesB)),
+            Talismans.RoundEffects(talA), Talismans.RoundEffects(talB));
         match.HpA = result.PlayerA.Hp; match.ShieldA = result.PlayerA.Shield; match.ManaA = result.PlayerA.Mana;
         match.HpB = result.PlayerB.Hp; match.ShieldB = result.PlayerB.Shield; match.ManaB = result.PlayerB.Mana;
+        // Talismans that react to the round: Iron Seal, Ember Coal, Second Wind. Twin Mark counts as fired when it was active.
+        var clashA = result.ClashWinner is null ? 0 : result.ClashWinner == 0 ? 1 : -1;
+        var (nextTalA, manaA2, firedA) = Talismans.AfterRound(talA, clashA, result.BonusBlockedByA, match.HpA, match.ManaA);
+        var (nextTalB, manaB2, firedB) = Talismans.AfterRound(talB, -clashA, result.BonusBlockedByB, match.HpB, match.ManaB);
+        match.ManaA = manaA2; match.ManaB = manaB2;
+        // Twin Mark only shows as fired when it actually earned the bonus (its side won the clash).
+        match.TalismanFiredA = firedA || (talA.Has(Talismans.FlagTwin) && clashA > 0) ? talA.Key : null;
+        match.TalismanFiredB = firedB || (talB.Has(Talismans.FlagTwin) && clashA < 0) ? talB.Key : null;
+        match.SetTalisman(true, nextTalA);
+        match.SetTalisman(false, nextTalB);
         match.UsedRunesA = AddUsedRune(match.UsedRunesA, a.Rune);
         match.UsedRunesB = AddUsedRune(match.UsedRunesB, b.Rune);
         match.LastRollA = JsonSerializer.Serialize(new { a.Rune, Symbol = CombatEngine.GetRuneSymbol(a.Rune), a.Form, a.State, a.D8Adjustment, Picked = match.PendingFormA is not null });
@@ -474,6 +494,8 @@ app.MapPost("/api/v1/combat/{matchId:guid}/shape", async (ShapeDiceRequest reque
     var className = isA ? match.ClassA : match.ClassB;
     var mana = isA ? match.ManaA : match.ManaB;
     var form = (isA ? match.FormA : match.FormB)!;
+    if (Talismans.ShapingLocked(match.Talisman(isA)))
+        return ApiError("talisman_locked", "Your Patient Stone holds your dice still this turn.", 409);
 
     switch (request.Kind)
     {
@@ -493,6 +515,9 @@ app.MapPost("/api/v1/combat/{matchId:guid}/shape", async (ShapeDiceRequest reque
                 if (mana < manaCost) return ApiError("not_enough_mana", $"Rerolling your rune costs {manaCost} mana.", 400);
                 if (isA) match.ManaA -= manaCost; else match.ManaB -= manaCost;
             }
+            // A free reroll from a talisman is spent here.
+            var (talismanAfter, _) = Talismans.SpendReroll(match.Talisman(isA));
+            match.SetTalisman(isA, talismanAfter);
             // A reroll always lands on a different rune.
             var current = (isA ? match.RuneA : match.RuneB)!;
             var used = ParseRunes(isA ? match.UsedRunesA : match.UsedRunesB).Append(current).ToList();
@@ -524,6 +549,59 @@ app.MapPost("/api/v1/combat/{matchId:guid}/shape", async (ShapeDiceRequest reque
         default:
             return ApiError("invalid_shape", "Choose reroll, pick or shift.", 400);
     }
+    await db.SaveChangesAsync();
+    return Results.Ok(CombatDto(match, player.Id, player.Username, await OpponentName(db, match, player.Id), rules, server));
+}).RequireAuthorization();
+
+// Use an active talisman during shaping (Mirror Shard, Gambler's Coin, Patient Stone, Twin Mark).
+app.MapPost("/api/v1/combat/{matchId:guid}/talisman", async (Guid matchId, ClaimsPrincipal user, RuneDbContext db, GameRules rules, ServerSettings server) =>
+{
+    var player = await CurrentPlayer(user, db);
+    var match = await db.CombatMatches.FindAsync(matchId);
+    if (player is null || match is null || (match.PlayerAId != player.Id && match.PlayerBId != player.Id))
+        return ApiError("not_found", "Combat match not found.", 404);
+    if (match.CompletedAtUtc is not null) return ApiError("match_complete", "This combat match is already complete.", 409);
+    if (match.AcceptDeadlineUtc is not null) return ApiError("match_not_ready", "Both players must accept the match first.", 409);
+    MarkSeen(match, player.Id);
+    EnsureDice(match);
+    var isA = match.PlayerAId == player.Id;
+    if ((isA ? match.PendingA : match.PendingB) is not null) return ApiError("already_locked", "You have already declared this turn.", 409);
+    var tal = match.Talisman(isA);
+    if (!Talismans.IsActive(tal.Key)) return ApiError("no_talisman", "You have no talisman to use.", 400);
+    if (Talismans.ChargesLeft(tal) <= 0) return ApiError("talisman_spent", "Your talisman has no charges left this duel.", 409);
+    if (tal.Has(Talismans.FlagUsed)) return ApiError("talisman_used", "You can use your talisman once per turn.", 409);
+    var manaCost = Talismans.UseManaCost(tal.Key);
+    var hpCost = Talismans.UseHpCost(tal.Key);
+    if ((isA ? match.ManaA : match.ManaB) < manaCost) return ApiError("not_enough_mana", $"Your talisman costs {manaCost} mana.", 400);
+    if (hpCost > 0 && (isA ? match.HpA : match.HpB) <= hpCost) return ApiError("not_enough_hp", "You need more HP to use your talisman.", 400);
+    if (isA) { match.ManaA -= manaCost; match.HpA -= hpCost; } else { match.ManaB -= manaCost; match.HpB -= hpCost; }
+    var className = isA ? match.ClassA : match.ClassB;
+    switch (tal.Key)
+    {
+        case Talismans.MirrorShard:
+        {
+            var flipped = Talismans.FlipForm((isA ? match.FormA : match.FormB)!);
+            if (isA) match.FormA = flipped; else match.FormB = flipped;
+            break;
+        }
+        case Talismans.GamblersCoin:
+        {
+            var current = (isA ? match.RuneA : match.RuneB)!;
+            var rune = CombatEngine.RollRune(className, [current], Random.Shared);
+            var form = CombatEngine.RollForm(Random.Shared);
+            if (isA) { match.RuneA = rune; match.FormA = form; match.PendingFormA = null; match.PendingD8AdjustmentA = 0; }
+            else { match.RuneB = rune; match.FormB = form; match.PendingFormB = null; match.PendingD8AdjustmentB = 0; }
+            break;
+        }
+        case Talismans.PatientStone:
+            if (isA) match.ManaA = Math.Min(CombatEngine.ManaCap, match.ManaA + 1); else match.ManaB = Math.Min(CombatEngine.ManaCap, match.ManaB + 1);
+            tal = tal.With(Talismans.FlagStill);
+            break;
+        case Talismans.TwinMark:
+            tal = tal.With(Talismans.FlagTwin);
+            break;
+    }
+    match.SetTalisman(isA, tal.With(Talismans.FlagUsed) with { Uses = tal.Uses + 1 });
     await db.SaveChangesAsync();
     return Results.Ok(CombatDto(match, player.Id, player.Username, await OpponentName(db, match, player.Id), rules, server));
 }).RequireAuthorization();
@@ -703,7 +781,17 @@ static async Task<CombatMatch> NewDuel(RuneDbContext db, Player a, Player b, str
         ManaA = Math.Min(CombatEngine.ManaCap, CombatEngine.StartMana + gearA[3]),
         ManaB = Math.Min(CombatEngine.ManaCap, CombatEngine.StartMana + gearB[3]),
         Mode = mode
-    };
+    }.WithTalismans(await EquippedTalisman(db, a.Id, mode), await EquippedTalisman(db, b.Id, mode));
+}
+
+// The talisman a player brings into a duel: enabled, and allowed in ranked when the duel is ranked.
+static async Task<string?> EquippedTalisman(RuneDbContext db, Guid playerId, string mode)
+{
+    var key = await db.PlayerTalismans.Where(x => x.PlayerId == playerId && x.Equipped).Select(x => x.TalismanKey).FirstOrDefaultAsync();
+    if (key is null || !Talismans.IsKnown(key)) return null;
+    var def = await db.Talismans.FindAsync(key);
+    if (def is null || !def.Enabled || (mode == DuelMode.Ranked && !def.Ranked)) return null;
+    return key;
 }
 
 // Friend duels and rematches: both players already agreed, so there is no Enter Match step.
@@ -751,8 +839,9 @@ static RematchState RematchDto(CombatMatch match, bool isA, ServerSettings serve
 }
 
 static IResult ApiError(string code, string message, int status) => Results.Json(new { error = new { code, message } }, statusCode: status);
-static async Task<Player?> CurrentPlayer(ClaimsPrincipal user, RuneDbContext db) => Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? await db.Players.FindAsync(id) : null;
-static object PlayerDto(Player p, GameRules r) => new { p.Username, p.Email, p.ClassName, p.League, leagueName = r.Leagues.FirstOrDefault(x => x.Number == p.League)?.Name ?? $"League {p.League}", p.Points, pointsPerLeague = r.PointsPerLeague, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems, p.TutorialDone };
+static async Task<Player?> CurrentPlayer(ClaimsPrincipal user, RuneDbContext db) =>
+    Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && await db.Players.FindAsync(id) is { Banned: false } player ? player : null;
+static object PlayerDto(Player p, GameRules r) => new { p.Username, p.Email, p.ClassName, p.League, leagueName = r.Leagues.FirstOrDefault(x => x.Number == p.League)?.Name ?? $"League {p.League}", p.Points, pointsPerLeague = r.PointsPerLeague, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems, p.TutorialDone, p.IsAdmin };
 
 // Records a finished duel once: league points for a win or loss, a match for both players, and new skill ratings.
 static async Task ApplyResult(RuneDbContext db, CombatMatch match, Guid? winnerId, GameRules rules, ServerSettings server)
@@ -851,6 +940,8 @@ static void RollTurnDice(CombatMatch match)
     match.PendingRerollA = false; match.PendingRerollB = false;
     match.PendingD8AdjustmentA = 0; match.PendingD8AdjustmentB = 0;
     match.PendingFormA = null; match.PendingFormB = null;
+    match.SetTalisman(true, Talismans.NewTurn(match.Talisman(true)));
+    match.SetTalisman(false, Talismans.NewTurn(match.Talisman(false)));
     if (match.ShadeDifficulty is not null)
     {
         // The Shade shapes its dice in the open, before the player declares.
@@ -878,11 +969,13 @@ static string AddHistory(string? csv, string state) => string.Join(",", History(
 // The engine writes "A: ... B: ..."; show the players' names instead.
 static string NameLog(string log, string nameA, string nameB) =>
     (log.StartsWith("A: ") ? $"{nameA}: " + log[3..].Replace(". B: ", $". {nameB}: ") : log)
-        .Replace("Mage A committed", $"{nameA} committed").Replace("Mage B committed", $"{nameB} committed");
+        .Replace("Mage A committed", $"{nameA} committed").Replace("Mage B committed", $"{nameB} committed")
+        .Replace("Mage A's", $"{nameA}'s").Replace("Mage B's", $"{nameB}'s");
 
 // Insight from gear makes rerolls cheaper. Flamecallers pay HP instead of mana.
 static (int Mana, int Hp) RerollCost(CombatMatch match, bool isA)
 {
+    if (Talismans.RerollIsFree(match.Talisman(isA))) return (0, 0);
     var insight = Equipment.Decode(isA ? match.BonusesA : match.BonusesB)[Equipment.Insight];
     var flamecaller = (isA ? match.ClassA : match.ClassB) == "Flamecaller";
     return flamecaller ? (0, Math.Max(0, 1 - insight)) : (Math.Max(0, CombatEngine.RerollManaCost - insight), 0);
@@ -998,7 +1091,12 @@ static void EnsureSqliteSchema(RuneDbContext db)
         create.CommandText = statement;
         create.ExecuteNonQuery();
     }
-    AddMissingColumns(connection, "Players", new Dictionary<string, string> { ["TutorialDone"] = "INTEGER NOT NULL DEFAULT 0" });
+    AddMissingColumns(connection, "Players", new Dictionary<string, string>
+    {
+        ["TutorialDone"] = "INTEGER NOT NULL DEFAULT 0",
+        ["IsAdmin"] = "INTEGER NOT NULL DEFAULT 0",
+        ["Banned"] = "INTEGER NOT NULL DEFAULT 0"
+    });
     AddMissingColumns(connection, "Items", new Dictionary<string, string>
     {
         ["Edge"] = "INTEGER NOT NULL DEFAULT 0",
@@ -1049,7 +1147,15 @@ static void EnsureSqliteSchema(RuneDbContext db)
         ["Mode"] = "TEXT NOT NULL DEFAULT 'ranked'",
         ["RematchA"] = "INTEGER NOT NULL DEFAULT 0",
         ["RematchB"] = "INTEGER NOT NULL DEFAULT 0",
-        ["RematchMatchId"] = "TEXT NULL"
+        ["RematchMatchId"] = "TEXT NULL",
+        ["TalismanA"] = "TEXT NULL",
+        ["TalismanB"] = "TEXT NULL",
+        ["TalismanUsesA"] = "INTEGER NOT NULL DEFAULT 0",
+        ["TalismanUsesB"] = "INTEGER NOT NULL DEFAULT 0",
+        ["TalismanFlagsA"] = "TEXT NOT NULL DEFAULT ''",
+        ["TalismanFlagsB"] = "TEXT NOT NULL DEFAULT ''",
+        ["TalismanFiredA"] = "TEXT NULL",
+        ["TalismanFiredB"] = "TEXT NULL"
     });
     AddMissingColumns(connection, "MatchQueue", new Dictionary<string, string>
     {
@@ -1171,6 +1277,8 @@ static object CombatDto(CombatMatch match, Guid playerId, string playerName, str
         opponentLocked = (isA ? match.PendingB : match.PendingA) is not null,
         myHistory = History(isA ? match.StatesA : match.StatesB),
         opponentHistory = History(isA ? match.StatesB : match.StatesA),
+        myTalisman = TalismanCatalog.Dto(match.Talisman(isA), isA ? match.TalismanFiredA : match.TalismanFiredB),
+        opponentTalisman = TalismanCatalog.Dto(match.Talisman(!isA), isA ? match.TalismanFiredB : match.TalismanFiredA),
         rerollManaCost = RerollCost(match, isA).Mana,
         rerollHpCost = RerollCost(match, isA).Hp,
         result = match.CompletedAtUtc is null ? null : new

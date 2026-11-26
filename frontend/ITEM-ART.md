@@ -14,16 +14,17 @@ Save each picture in `frontend/public/items/` (create the folder) and name it af
 
 ## Shared style (paste this before every prompt)
 
-> Fantasy game inventory icon, a single object centred and filling most of the frame, three-quarter view, hand-painted illustration with fine ink linework, warm sepia and parchment tones like an old storybook, soft light from the top left, subtle rim light, plain very dark brown background (#2a1306), no text, no border, no hands, no character, square 1:1.
+> Hand-drawn cartoon fantasy game item, a single object floating slightly tilted, thick uneven black ink outlines, chunky exaggerated shapes, flat cel shading with two tones and a few sharp highlights, muted slate and gunmetal greys with small warm brass or leather accents, battered and chipped surfaces with scratches, a few small stone chips and specks floating around it, soft oval shadow on the ground below, plain light grey background, no text, no signature, no watermark, no hands, no character, square 1:1.
 
 Then add the rarity line and the item line below.
 
 **Rarity lines**
-- Common: `plain, worn materials, no glow.`
-- Rare: `finer craftsmanship, a faint cool blue magical glint.`
-- Epic: `ornate and precious, a soft violet magical glow around it.`
+- Common: `plain worn iron, cloth and leather, no glow.`
+- Rare: `finer work, cold blue glowing eye slits or runes.`
+- Epic: `ornate, gold trim, a faint violet magical smoke or glow.`
 
 Keep the same tool, the same style text and, if your tool allows it, the same seed for every item, so the set looks like one family.
+Ask for a transparent background if your tool supports it; otherwise the plain grey background is fine, and Claude can cut it out.
 
 ## Items
 

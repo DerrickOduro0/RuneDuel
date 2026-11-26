@@ -1155,6 +1155,46 @@ button.danger{background:linear-gradient(180deg,#9b2a14,#6e1a0a 62%,#5a1407);bor
 /* laptops: slimmer cards and ring so the fighters get more width */
 @media (min-width:761px) and (max-width:1500px){.duel{--ring:190px}.rune-card{width:clamp(220px,17vw,250px);padding:10px}.duel .duel-stage{gap:6px;padding:0 18px}.rune-field{gap:8px}}
 
+/* ================= Talismans ================= */
+.talisman-medal{--m:44px;position:relative;display:grid;place-items:center;flex:none;width:var(--m);height:var(--m);border-radius:50%;
+  background:radial-gradient(circle at 50% 35%,#5b4a7a,#241b33 70%);box-shadow:0 0 0 2px #c9a3ff66,0 0 14px #9b6bff55}
+.talisman-medal i{font-style:normal;font-size:calc(var(--m)*.5);line-height:1;color:#efe3ff;text-shadow:0 0 8px #b88cff}
+.talisman-medal.size-sm{--m:30px}.talisman-medal.size-lg{--m:56px}
+.talisman-medal.is-empty{background:#2b3138;box-shadow:0 0 0 1px #1214172a}.talisman-medal.is-empty i{color:#9aa5b1;text-shadow:none}
+.talisman-card{display:grid;align-content:start;gap:8px}
+.talisman-card-head{display:flex;align-items:center;gap:12px}
+.talisman-card-head h3{margin:0}
+.talisman-effect{margin:0;font:600 .98rem/1.35 var(--pc-font);color:var(--pc-ink)}
+.talisman-drawback{margin:0;font:600 .88rem/1.3 var(--pc-font);color:#3b444f}.talisman-drawback b{color:inherit}
+.talisman-drawback.is-none{color:var(--pc-mute)}
+.talisman-card.is-equipped{box-shadow:0 0 0 2px #9b6bff88,0 8px 20px #05080a55!important}
+.shop-section{margin-bottom:18px}
+.shop-section-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:4px 2px 10px}
+.shop-section-head h3{margin:0;font:800 1.15rem var(--pc-font);letter-spacing:.08em;text-transform:uppercase;color:var(--pc-ink)}
+.shop-section-head p{margin:0}
+.bag-talismans{display:grid;gap:10px;align-content:start;overflow:auto}
+.bag-talismans .talisman-card{padding:14px}
+.bag-empty-talisman{display:grid;gap:10px;justify-items:start;padding:12px}
+.doll-talisman{position:absolute;left:12px;bottom:12px;z-index:3;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;min-height:0;border-radius:999px!important;
+  background:#1f242acc!important;border:1px solid #1214171f!important;box-shadow:0 6px 16px #05080a66!important;color:var(--pc-ink);text-transform:none;letter-spacing:0;text-align:left}
+.doll-talisman span{display:grid;line-height:1.1}.doll-talisman small{font:700 .6rem var(--pc-font);letter-spacing:.14em;color:var(--pc-mute)}.doll-talisman b{font:700 .9rem var(--pc-font)}
+.doll-talisman:hover{transform:none;filter:brightness(1.15)}
+/* in a duel */
+.duel-talisman{display:flex;align-items:center;gap:8px;width:100%;margin-top:8px;padding:6px 8px;border-radius:6px;background:#ecedee26;border:1px solid #12141712;text-align:left}
+.duel-talisman.is-empty{justify-content:center;color:var(--pc-mute);font:600 .78rem var(--pc-font)}
+.duel-talisman.is-lit{border-color:#b88cff;box-shadow:0 0 14px #9b6bff66}
+.duel-talisman.is-spent{opacity:.55}
+.duel-talisman-copy{display:grid;min-width:0;flex:1;line-height:1.15}
+.duel-talisman-copy b{font:700 .84rem var(--pc-font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.duel-talisman-copy small{font:600 .7rem var(--pc-font);color:#c9a8f0}
+.talisman-pips{display:flex;gap:3px}.talisman-pips i{width:8px;height:8px;border-radius:50%;border:1.5px solid #b88cff}.talisman-pips i.is-full{background:#b88cff;box-shadow:0 0 6px #b88cff}
+.talisman-use{padding:5px 10px!important;min-height:0;font:700 .78rem var(--pc-font)!important;letter-spacing:.02em;text-transform:none;border-radius:5px!important;
+  background:linear-gradient(180deg,#8d5fe0,#5d3aa6)!important;color:#121417!important;border:0!important;box-shadow:0 0 10px #8d5fe066!important}
+.talisman-use b{margin-left:5px;color:#e7d6ff}
+.talisman-use:disabled{background:#3a414a!important;color:#9aa5b1!important;box-shadow:none!important}
+.round-banner-talisman{display:grid;gap:2px}.round-banner-talisman em{font:700 .82rem var(--pc-font);color:#7a4fc4;font-style:normal}
+@media (max-width:760px){.duel-talisman{gap:5px;padding:4px 5px;margin-top:4px}.duel-talisman-copy small{display:none}.duel-talisman-copy b{font-size:.7rem}.talisman-medal.size-sm{--m:22px}.talisman-use{padding:4px 6px!important;font-size:.68rem!important}.talisman-use b{display:none}.talisman-pips i{width:6px;height:6px}}
+
 /* ================= Dark theme hand-tuning (added after the colour conversion) ================= */
 :root{--pc-font:"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;--dk-gold:#f2b632}
 body{background:#171b20;color:#e6eaee}
@@ -1221,3 +1261,48 @@ button{text-shadow:none}
 .modal-scrim,.found-scrim,.coach-dim,.duel .pause-overlay{background:#0a0d12a6!important;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:inherit;text-shadow:none}
 .modal-close{background:#ffffff14!important;color:#e6eaee!important;border:1px solid #ffffff22!important}
 .switch-row input:not(:checked)+.switch:after,.switch-row input:not(:checked)+.switch::before{background:#8a96a3!important}
+/* talismans: warm cost text and layout tweaks (kept out of the colour conversion) */
+.talisman-drawback{color:#f0a978!important}.talisman-drawback.is-none{color:#8a96a3!important}
+.talisman-card .item-kind{font:700 .72rem var(--pc-font);letter-spacing:.12em;text-transform:uppercase;color:#c9a8f0}
+.doll-talisman{top:10px;bottom:auto}
+.bag-tabs{display:grid!important;grid-template-columns:repeat(3,1fr);gap:6px}
+.bag-tabs button{padding:8px 6px;white-space:nowrap}
+.doll-head{position:absolute;top:10px;right:12px;z-index:3;display:flex;align-items:center;gap:8px}
+.doll-head .doll-classes,.doll-head .doll-talisman{position:static}
+.doll-talisman{padding:4px 12px 4px 4px}
+@media (max-width:700px){.doll-head{top:6px;right:6px;gap:4px}.doll-talisman small{display:none}.doll-talisman b{font-size:.72rem}}
+.duel-talisman{flex-wrap:wrap}
+.duel-talisman-copy b{white-space:normal}
+.talisman-use{flex-basis:100%;margin-top:2px;justify-content:center;display:flex;align-items:center}
+.doll-head{position:static;justify-content:flex-end;margin:0 0 6px}
+@media (max-width:760px){.duel-talisman-copy b{font-size:.68rem}}
+@media (max-width:760px){
+  .duel-talisman{flex-wrap:nowrap;margin-top:3px}
+  .duel-talisman-copy{display:none}
+  .talisman-use{flex:1 1 auto;margin:0}.talisman-use-name{display:none}
+  .duel-talisman.is-empty{display:none}
+}
+/* ---------- Talisman paper slips ---------- */
+.talisman-slip{--h:96px;display:inline-grid;place-items:center;flex:none;height:var(--h);width:calc(var(--h)*.58);transform:rotate(-7deg);filter:drop-shadow(0 4px 6px #0007)}
+.talisman-slip svg{width:100%;height:100%;overflow:visible}
+.talisman-slip .slip-paper{stroke:#b08452;stroke-width:1}
+.talisman-slip .slip-ink{stroke:#8b3f1f;stroke-width:2.2;stroke-linecap:round;opacity:.85}
+.talisman-slip .slip-ink.thin{stroke-width:1.6;opacity:.7}
+.talisman-slip .slip-rune{font:700 30px/1 "Segoe UI Historic","Noto Sans Runic","Segoe UI Symbol",serif;fill:#7a2f16;opacity:.92}
+.talisman-slip .slip-seal{fill:#b3261e;opacity:.9}
+.talisman-slip .slip-seal-mark{font:700 11px/1 "Segoe UI Historic","Noto Sans Runic",serif;fill:#fbe3c8}
+.talisman-slip.size-lg{--h:96px}.talisman-slip.size-md{--h:64px}.talisman-slip.size-sm{--h:40px;filter:drop-shadow(0 2px 3px #0007)}
+.talisman-slip.is-empty{width:26px;height:40px;transform:none;border:1.5px dashed #ffffff44;border-radius:3px;filter:none}
+.talisman-slip.is-empty i{font-style:normal;color:#9aa5b1}
+.talisman-card-head{align-items:center;gap:14px}
+.talisman-card:hover .talisman-slip,.doll-talisman:hover .talisman-slip{transform:rotate(-3deg) translateY(-2px);transition:transform .2s}
+.duel-talisman.is-lit .talisman-slip{filter:drop-shadow(0 0 8px #f2b632) drop-shadow(0 2px 3px #0007)}
+.duel-talisman .talisman-slip{margin:-4px 0}
+@media (max-width:760px){.duel-talisman .talisman-slip.size-sm{--h:30px}}
+.talisman-slip.size-lg{--h:124px}
+.talisman-slip .slip-rune{font-size:36px;stroke:#7a2f16;stroke-width:.8}
+.talisman-card-head h3{font-size:1.25rem}
+
+/* Admin link in Settings (admins only) */
+.settings-actions .admin-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 18px;border-radius:4px;background:#ffffff14;color:#e6eaee;text-decoration:none;font-weight:700}
+.settings-actions .admin-link:hover{background:#ffffff24}

@@ -455,6 +455,16 @@ export default function Home() {
     }
   }
 
+  async function useTalisman() {
+    try {
+      setCombat(await request(`/combat/${combat.matchId}/talisman`, { method: "POST" }, token));
+      return true;
+    } catch (value) {
+      showError(value);
+      return false;
+    }
+  }
+
   async function refreshCombat() {
     if (!combat) return;
     try {
@@ -640,7 +650,7 @@ export default function Home() {
         {match.status === "found" && <MatchFoundOverlay match={match} error={error} onAccept={acceptMatch} onDecline={cancelMatch} />}
         {matchNotice && <div className="toast" role="status">{matchNotice}</div>}
       </>}
-      {screen === screens.combat && combat && <CombatScreen key={combat.matchId} settings={settings} content={content} combat={combat} onSubmit={submitCombatAction} onShape={shapeDice} onRefresh={refreshCombat} onGiveUp={giveUpCombat} onClaimWin={claimWin} onRematch={startShade} onAskRematch={requestRematch} onFindCasual={() => findMatch("casual")} onLoadRounds={loadMatchDetail} onTutorialEnd={finishTutorial} onHome={() => { setScreen(screens.home); }} onLeague={openLeague} />}
+      {screen === screens.combat && combat && <CombatScreen key={combat.matchId} settings={settings} content={content} combat={combat} onSubmit={submitCombatAction} onShape={shapeDice} onTalisman={useTalisman} onRefresh={refreshCombat} onGiveUp={giveUpCombat} onClaimWin={claimWin} onRematch={startShade} onAskRematch={requestRematch} onFindCasual={() => findMatch("casual")} onLoadRounds={loadMatchDetail} onTutorialEnd={finishTutorial} onHome={() => { setScreen(screens.home); }} onLeague={openLeague} />}
       {screen === screens.league && profile && <RankScreen league={league} content={content} profile={profile} loadHistory={loadHistory} loadRounds={loadMatchDetail} onBack={() => setScreen(screens.home)} onNavigate={openRealm} onLogout={logout} />}
       {screen === screens.realm && profile && <RealmPage page={realmPage} content={content} profile={profile} classes={classes} league={league} realm={realm} busy={realmBusy} notice={realmNotice} onAction={realmAction} onBack={() => setScreen(screens.home)} onNavigate={openRealm} onLogout={logout} onLeague={openLeague} />}
       {settingsOpen && profile && <SettingsModal profile={profile} settings={settings} defaults={content?.settingsDefaults} onChange={updateSettings} onClose={() => setSettingsOpen(false)} onLogout={() => { setSettingsOpen(false); logout(); }} />}
@@ -728,6 +738,17 @@ function RealmPage({ page, content, profile, classes, league, realm, busy, notic
     {loading && <p className="muted">Loading from the realm…</p>}
     {page === "characters" && <p className="muted page-note">The four paths of rune magic. Your class is set when you create your mage.</p>}
     {page === "characters" && <div className="cards">{classes.map((item) => <article className="card" key={item.name}><div className="class-glyph">{item.runes?.[0]?.symbol || item.name.slice(0, 1)}</div><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p>{item.coreRule}</p><p className="rune-row">{item.runes?.map((rune) => <span key={rune.name} title={`${rune.name} — ${rune.meaning}`}>{rune.symbol}</span>)}</p><span className="muted">{item.name === profile.className ? "YOUR ACTIVE CLASS" : "AVAILABLE LORE"}</span></article>)}</div>}
+    {realm && page === "shop" && realm.talismans?.length > 0 && <section className="shop-section">
+      <div className="shop-section-head"><h3>Talismans</h3><p className="muted">Each bends one rule of the duel. Wear one at a time; your opponent can see it.</p></div>
+      <div className="cards talisman-cards">{realm.talismans.map((t) => {
+        const short = realm.wallet.coins < t.priceCoins;
+        return <TalismanCard key={t.key} talisman={t}>
+          <p className="item-price">{t.priceCoins.toLocaleString()} coins</p>
+          <button disabled={busy || t.owned || short} className={t.owned ? "secondary" : ""} onClick={() => onAction(`/realm/talismans/${t.key}/buy`)}>{t.owned ? (t.equipped ? "Equipped" : "Owned") : short ? "Not enough" : "Purchase"}</button>
+        </TalismanCard>;
+      })}</div>
+    </section>}
+    {realm && page === "shop" && <div className="shop-section-head"><h3>Gear</h3></div>}
     {realm && page === "shop" && <div className="cards">{realm.shop.map((item) => {
       const price = item.priceGems > 0 ? `${item.priceGems} gems` : `${item.priceCoins.toLocaleString()} coins`;
       const short = item.priceGems > 0 ? realm.wallet.gems < item.priceGems : realm.wallet.coins < item.priceCoins;
@@ -846,6 +867,8 @@ function BuildScreen({ profile, content, realm, busy, notice, onAction, onBack, 
   const slotName = Object.fromEntries((content?.slots || []).map((slot) => [slot.key, slot.name]));
   const build = realm?.build;
   const inventory = realm?.inventory || [];
+  const ownedTalismans = (realm?.talismans || []).filter((t) => t.owned);
+  const equippedTalisman = ownedTalismans.find((t) => t.equipped);
   const shown = filter === "all" ? inventory : inventory.filter((item) => item.kind === filter);
   const selected = inventory.find((item) => item.key === selectedKey) || null;
 
@@ -870,7 +893,13 @@ function BuildScreen({ profile, content, realm, busy, notice, onAction, onBack, 
       {realm && !build && <div className="message" role="alert">The game server is out of date, so your build cannot load. Stop the API, run dotnet build, then dotnet run.</div>}
       {build && <div className="build-layout">
         <div className="doll-panel">
-          <button type="button" className="doll-classes" onClick={() => onNavigate("characters")}>{profile.className} · Classes</button>
+          <div className="doll-head">
+            <button type="button" className={`doll-talisman ${equippedTalisman ? "is-filled" : ""}`} onClick={() => setTab("talismans")} aria-label={`Talisman: ${equippedTalisman ? equippedTalisman.name : "none"}`}>
+              {equippedTalisman ? <TalismanMedal talisman={equippedTalisman} size="sm" /> : <span className="talisman-slip size-sm is-empty" aria-hidden="true"><i>+</i></span>}
+              <span><small>TALISMAN</small><b>{equippedTalisman ? equippedTalisman.name : "None"}</b></span>
+            </button>
+            <button type="button" className="doll-classes" onClick={() => onNavigate("characters")}>{profile.className} · Classes</button>
+          </div>
           <div className="doll-stage">
             <svg className="doll-lines" viewBox="0 0 1000 760" preserveAspectRatio="none" aria-hidden="true">
               {build.slots.map((slot) => {
@@ -906,6 +935,7 @@ function BuildScreen({ profile, content, realm, busy, notice, onAction, onBack, 
         <aside className="bag-panel">
           <div className="bag-tabs" role="tablist">
             <button role="tab" aria-selected={tab === "inventory"} className={tab === "inventory" ? "is-on" : ""} onClick={() => setTab("inventory")}>Inventory <small>{inventory.length}</small></button>
+            <button role="tab" aria-selected={tab === "talismans"} className={tab === "talismans" ? "is-on" : ""} onClick={() => setTab("talismans")}>Talismans <small>{ownedTalismans.length}</small></button>
             <button role="tab" aria-selected={tab === "attributes"} className={tab === "attributes" ? "is-on" : ""} onClick={() => setTab("attributes")}>Attributes</button>
           </div>
 
@@ -934,6 +964,16 @@ function BuildScreen({ profile, content, realm, busy, notice, onAction, onBack, 
               </> : <p className="muted">Pick an item to see its stats, or click a slot on your mage.</p>}
             </div>
           </>}
+
+          {tab === "talismans" && <div className="bag-talismans">
+            {ownedTalismans.length === 0 && <div className="bag-empty-talisman"><p className="muted">You have no talismans yet. Each one bends one rule of the duel.</p><button onClick={() => onNavigate("shop")}>Visit the shop</button></div>}
+            {ownedTalismans.map((t) => <TalismanCard key={t.key} talisman={t}>
+              {t.equipped
+                ? <button className="secondary" disabled={busy} onClick={() => onAction("/realm/talismans/unequip")}>Take off</button>
+                : <button disabled={busy} onClick={() => onAction(`/realm/talismans/${t.key}/equip`)}>Equip</button>}
+            </TalismanCard>)}
+            {ownedTalismans.length > 0 && <p className="muted build-note">One talisman at a time. It locks in when a duel starts.</p>}
+          </div>}
 
           {tab === "attributes" && <div className="bag-attributes">
             {attributes.map((item) => {
@@ -1046,6 +1086,7 @@ function SettingsModal({ profile, settings, defaults, onChange, onClose, onLogou
           <h3>Session</h3>
           <div className="settings-actions">
             <button className="secondary" onClick={() => onChange({ ...(defaults || DEFAULT_SETTINGS) })}>Reset preferences</button>
+            {profile.isAdmin && <a className="secondary admin-link" href="/admin">Open admin page</a>}
             <button onClick={onLogout}>Log out</button>
           </div>
           <p className="settings-foot">Preferences are saved to your account, so they follow you to any device.</p>
@@ -1727,6 +1768,59 @@ function diceView(dice) {
 // How long a tapped state waits before it is sent, so a mis-tap can be taken back.
 const LOCK_DELAY_MS = 1800;
 
+// A talisman drawn as a curled paper slip: a brushed-ink rune down the middle and a red seal at the foot.
+// Each talisman has its own rune; the shape is the same for all.
+const TALISMAN_RUNES = { "lucky-knot": "ᛃ", "mirror-shard": "ᛞ", "ember-coal": "ᚲ", "iron-seal": "ᛉ", "gamblers-coin": "ᛈ", "patient-stone": "ᛁ", "second-wind": "ᛒ", "twin-mark": "ᛗ" };
+function TalismanMedal({ talisman, size = "md" }) {
+  const rune = TALISMAN_RUNES[talisman?.key] || talisman?.icon || "ᚱ";
+  const id = `slip-${talisman?.key || "x"}-${size}`;
+  return <span className={`talisman-slip size-${size} ${talisman ? "" : "is-empty"}`} aria-hidden="true">
+    <svg viewBox="0 0 64 112">
+      <defs>
+        <linearGradient id={`${id}-paper`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fbf0d6" /><stop offset=".55" stopColor="#f1dcb2" /><stop offset="1" stopColor="#dcbb85" />
+        </linearGradient>
+        <linearGradient id={`${id}-shade`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#8a5a2a" stopOpacity=".28" /><stop offset=".35" stopColor="#8a5a2a" stopOpacity="0" /><stop offset=".8" stopColor="#8a5a2a" stopOpacity="0" /><stop offset="1" stopColor="#8a5a2a" stopOpacity=".3" />
+        </linearGradient>
+      </defs>
+      <path className="slip-paper" d="M18 4 C30 2 44 3 56 2 C52 22 58 40 54 58 C50 76 58 92 50 108 C38 110 22 109 10 110 C14 92 6 76 10 58 C14 40 8 22 18 4 Z" fill={`url(#${id}-paper)`} />
+      <path d="M18 4 C30 2 44 3 56 2 C52 22 58 40 54 58 C50 76 58 92 50 108 C38 110 22 109 10 110 C14 92 6 76 10 58 C14 40 8 22 18 4 Z" fill={`url(#${id}-shade)`} />
+      <path className="slip-ink" d="M22 12 C30 9 40 10 48 9 M24 14 C22 34 26 50 22 66 C19 80 24 92 19 102 M46 12 C44 32 48 50 44 66 C41 80 46 92 42 102" fill="none" />
+      <text className="slip-rune" x="34" y="50" textAnchor="middle">{rune}</text>
+      <path className="slip-ink thin" d="M27 62 C31 60 37 60 41 62 M28 68 C32 66 36 66 40 68" fill="none" />
+      <rect className="slip-seal" x="26" y="80" width="16" height="16" rx="2" transform="rotate(-6 34 88)" />
+      <text className="slip-seal-mark" x="34" y="92" textAnchor="middle" transform="rotate(-6 34 88)">{rune}</text>
+    </svg>
+  </span>;
+}
+
+function TalismanCard({ talisman, children }) {
+  return <article className={`card talisman-card ${talisman.equipped ? "is-equipped" : ""}`}>
+    <div className="talisman-card-head"><TalismanMedal talisman={talisman} size="lg" /><h3>{talisman.name}</h3></div>
+    <span className="item-kind">{talisman.active ? "Use in duel" : "Triggers itself"}{talisman.charges ? ` · ${talisman.charges}× per duel` : " · always on"}</span>
+    <p className="talisman-effect">{talisman.effect}</p>
+    {talisman.drawback ? <p className="talisman-drawback"><b>Cost:</b> {talisman.drawback}</p> : <p className="talisman-drawback is-none">No drawback</p>}
+    {children}
+  </article>;
+}
+
+// The talisman row on a rune card in a duel. Mine can be used; theirs is shown so you can play around it.
+function DuelTalisman({ talisman, mine, disabled, myMana, myHp, onUse }) {
+  if (!talisman) return <div className="duel-talisman is-empty"><span>{mine ? "No talisman" : "No talisman"}</span></div>;
+  const pips = Array.from({ length: talisman.charges || 0 }, (_, i) => <i key={i} className={i < talisman.chargesLeft ? "is-full" : ""} />);
+  const cost = [talisman.manaCost ? `${talisman.manaCost}◈` : "", talisman.hpCost ? `${talisman.hpCost} HP` : ""].filter(Boolean).join(" ");
+  const affordable = (myMana ?? 0) >= (talisman.manaCost || 0) && (myHp ?? 0) > (talisman.hpCost || 0);
+  const canUse = mine && talisman.active && talisman.chargesLeft > 0 && !talisman.usedThisTurn && affordable && !disabled;
+  const status = talisman.twinActive ? "Active this turn" : talisman.stillThisTurn ? "Dice held this turn" : talisman.freeReroll ? "Free reroll ready" : !talisman.active ? (talisman.chargesLeft > 0 || !talisman.charges ? "Triggers itself" : "Spent") : talisman.chargesLeft > 0 ? "" : "Spent";
+  return <div className={`duel-talisman ${talisman.twinActive || talisman.stillThisTurn ? "is-lit" : ""} ${talisman.chargesLeft === 0 && talisman.charges ? "is-spent" : ""}`} title={`${talisman.name}: ${talisman.effect}${talisman.drawback ? ` Cost: ${talisman.drawback}` : ""}`}>
+    <TalismanMedal talisman={talisman} size="sm" />
+    <span className="duel-talisman-copy"><b>{talisman.name}</b>{status && <small>{status}</small>}</span>
+    {pips.length > 0 && <span className="talisman-pips" aria-label={`${talisman.chargesLeft} of ${talisman.charges} charges left`}>{pips}</span>}
+    {mine && talisman.active && talisman.chargesLeft > 0 && !talisman.usedThisTurn && <button type="button" className="talisman-use" disabled={!canUse} onClick={onUse} title={talisman.effect}>Use<span className="talisman-use-name"> {talisman.name}</span>{cost && <b>{cost}</b>}</button>}
+  </div>;
+}
+
 function RematchActions({ combat, onAskRematch, onFindCasual }) {
   const r = combat.rematch;
   const name = combat.opponent;
@@ -1737,7 +1831,7 @@ function RematchActions({ combat, onAskRematch, onFindCasual }) {
   return <button className="secondary" onClick={onAskRematch}>Rematch</button>;
 }
 
-function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, onShape, onRefresh, onGiveUp, onClaimWin, onHome, onLeague, onRematch, onAskRematch, onFindCasual, onLoadRounds, onTutorialEnd }) {
+function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, onShape, onTalisman, onRefresh, onGiveUp, onClaimWin, onHome, onLeague, onRematch, onAskRematch, onFindCasual, onLoadRounds, onTutorialEnd }) {
   const tutorial = combat.practice === "tutorial";
   const [coachStep, setCoachStep] = useState(tutorial ? 0 : -1);
   const tutorialEnded = useRef(false);
@@ -1824,7 +1918,8 @@ function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, 
       if (taken) parts.push(`You take ${taken}`);
       if (next.myHp > before.myHp) parts.push(`You heal ${next.myHp - before.myHp}`);
       if (next.myShield > before.myShield) parts.push(`+${next.myShield - before.myShield} shield`);
-      setBanner({ id: next.turn, clash, mineState, theirState, detail: parts.join(" · ") || "No damage" });
+      const fired = [next.myTalisman?.firedLastRound && `Your ${next.myTalisman.name}`, next.opponentTalisman?.firedLastRound && `${next.opponent}'s ${next.opponentTalisman.name}`].filter(Boolean);
+      setBanner({ id: next.turn, clash, mineState, theirState, detail: parts.join(" · ") || "No damage", fired });
       if (!settings.reduceMotion && Math.max(dealt, taken) >= 6) setShake(dealt >= taken ? "opp" : "me");
       setHit(iHit ? "opp" : theyHit ? "me" : "");
       setAnim({ me: theyHit ? "hit" : iHit || next.myShield > before.myShield ? "cast" : "idle", opp: iHit ? "hit" : theyHit ? "cast" : "idle" });
@@ -1903,6 +1998,14 @@ function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, 
     setShaping(false);
   }
 
+  async function talismanUse() {
+    if (shaping) return;
+    setShaping(true);
+    setFormOpen(false);
+    await onTalisman?.();
+    setShaping(false);
+  }
+
   function endTutorial(finishedDuel) {
     if (tutorialEnded.current) return;
     tutorialEnded.current = true;
@@ -1945,9 +2048,11 @@ function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, 
   const theirs = view.theirs;
   const myMana = shown.myMana ?? 0;
   const isFlamecaller = combat.myClass === "Flamecaller";
-  const canReroll = !locked && mine && !mine.rerolled && (isFlamecaller ? shown.myHp > 1 : myMana >= rerollCost);
-  const canPick = !locked && mine && !mine.picked && myMana >= pickCost;
-  const canShift = !locked && mine && combat.myClass === "Fateweaver" && !mine.shifted && !mine.picked;
+  const held = Boolean(shown.myTalisman?.stillThisTurn);
+  const freeReroll = Boolean(shown.myTalisman?.freeReroll);
+  const canReroll = !locked && !held && mine && !mine.rerolled && (freeReroll || (isFlamecaller ? shown.myHp > 1 : myMana >= rerollCost));
+  const canPick = !locked && !held && mine && !mine.picked && myMana >= pickCost;
+  const canShift = !locked && !held && mine && combat.myClass === "Fateweaver" && !mine.shifted && !mine.picked;
   const formIndex = mine ? formNames.indexOf(mine.form) : -1;
   const myCommit = mine?.formState || formInfo(mine?.form)?.state || "";
   const theirCommit = theirs?.formState || formInfo(theirs?.form)?.state || "";
@@ -2005,8 +2110,9 @@ function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, 
           <strong className="rune-card-rune">{mine?.rune || "…"}{tags(mine) && <i className="rune-card-marks" title="↻ rerolled · ★ form picked · ⇅ shifted">{tags(mine)}</i>}</strong>
           <span className="rune-card-form" key={`m-${mine?.form}`}>{mine?.form || "Rolling…"}{myCommit && !finished && <em className={`state-tag type-${myCommit.toLowerCase()}`}>{myCommit}</em>}</span>
           {formInfo(mine?.form)?.blurb && <small className="rune-card-blurb">{formInfo(mine?.form).blurb}</small>}
+          {!finished && shown.myTalisman && <DuelTalisman talisman={shown.myTalisman} mine disabled={locked || shaping || settling} myMana={myMana} myHp={shown.myHp} onUse={talismanUse} />}
           {!locked && !finished && <div className="shape-tray" role="group" aria-label="Shape your rune">
-            <button type="button" disabled={!canReroll || shaping || settling} onClick={() => shape("reroll")} title={isFlamecaller ? "Flamecallers pay 1 HP to reroll their rune" : `Reroll your rune for ${rerollCost} mana`}>{mine?.rerolled ? "Rerolled" : <>↻ Reroll <b>{isFlamecaller ? "1 HP" : `${rerollCost}◈`}</b></>}</button>
+            <button type="button" disabled={!canReroll || shaping || settling} onClick={() => shape("reroll")} title={isFlamecaller ? "Flamecallers pay 1 HP to reroll their rune" : `Reroll your rune for ${rerollCost} mana`}>{mine?.rerolled ? "Rerolled" : <>↻ Reroll <b>{freeReroll ? "Free" : isFlamecaller ? "1 HP" : `${rerollCost}◈`}</b></>}</button>
             <button type="button" disabled={!canPick || shaping || settling} onClick={() => setFormOpen((value) => !value)} aria-expanded={formOpen} title={`Choose your form for ${pickCost} mana`}>{mine?.picked ? "Face chosen" : <>★ Pick D8 <b>{pickCost}◈</b></>}</button>
             {combat.myClass === "Fateweaver" && <span className="shift-pair">
               <button type="button" disabled={!canShift || formIndex <= 0 || shaping || settling} onClick={() => shape("shift", { direction: -1 })} aria-label="Shift your form down one face" title="Shift your form down one face">−1</button>
@@ -2023,6 +2129,7 @@ function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, 
             </span>
             <strong>{banner.clash === "won" ? "Clash won" : banner.clash === "lost" ? "Clash lost" : "Even clash"}</strong>
             <small>{banner.detail}</small>
+            {banner.fired?.length > 0 && <span className="round-banner-talisman">{banner.fired.map((name) => <em key={name}>✦ {name} took effect</em>)}</span>}
           </div>}
           {finished ? <div className="dice-vs">VS</div> : <StateRing states={states} info={content?.states || []} value={state} locked={locked} ready={ringReady}
             bonus={myCommit} pending={Boolean(pending)} onPick={choose} onReopen={() => choose(state)} />}
@@ -2036,6 +2143,7 @@ function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, 
           <strong className="rune-card-rune">{theirs?.rune || "…"}{tags(theirs) && <i className="rune-card-marks">{tags(theirs)}</i>}</strong>
           <span className="rune-card-form" key={`t-${theirs?.form}`}>{theirs?.form || "Rolling…"}{theirCommit && !finished && <em className={`state-tag type-${theirCommit.toLowerCase()}`}>{theirCommit}</em>}</span>
           {formInfo(theirs?.form)?.blurb && <small className="rune-card-blurb">{formInfo(theirs?.form).blurb}</small>}
+          {!finished && shown.opponentTalisman && <DuelTalisman talisman={shown.opponentTalisman} />}
           {!finished && <div className="shape-tray opp-tray" aria-label="Their recent states">
             <span className="tray-label">Last played</span>
             {(shown.opponentHistory || []).slice(-3).map((st, i) => <em key={i} className={`state-tag type-${String(st).toLowerCase()}`}>{st}</em>)}

@@ -96,6 +96,45 @@ public static class RealmEndpoints
             return Results.Ok(await BuildRealm(db, player, $"{item.Name} taken off."));
         }).RequireAuthorization();
 
+        // Talismans: bought with coins, one equipped at a time.
+        app.MapPost("/api/v1/realm/talismans/{key}/buy", async (string key, ClaimsPrincipal user, RuneDbContext db, ServerSettings server) =>
+        {
+            var player = await CurrentPlayer(user, db);
+            if (player is null) return NotFound();
+            await EnsureRealm(db, player, server);
+            var talisman = await db.Talismans.FindAsync(key);
+            if (talisman is null || !talisman.Enabled) return Error("unknown_talisman", "That talisman is not for sale.", 404);
+            if (await db.PlayerTalismans.AnyAsync(x => x.PlayerId == player.Id && x.TalismanKey == key))
+                return Error("already_owned", "You already own this talisman.", 409);
+            if (player.Coins < talisman.PriceCoins) return Error("not_enough_currency", "You do not have enough coins.", 400);
+            player.Coins -= talisman.PriceCoins;
+            // The first talisman bought is equipped straight away.
+            var first = !await db.PlayerTalismans.AnyAsync(x => x.PlayerId == player.Id);
+            db.PlayerTalismans.Add(new PlayerTalisman { Id = Guid.NewGuid(), PlayerId = player.Id, TalismanKey = key, Equipped = first });
+            await db.SaveChangesAsync();
+            return Results.Ok(await BuildRealm(db, player, first ? $"{talisman.Name} bought and equipped." : $"{talisman.Name} added to your talismans."));
+        }).RequireAuthorization();
+
+        app.MapPost("/api/v1/realm/talismans/{key}/equip", async (string key, ClaimsPrincipal user, RuneDbContext db, ServerSettings server) =>
+        {
+            var player = await CurrentPlayer(user, db);
+            if (player is null) return NotFound();
+            var owned = await db.PlayerTalismans.Where(x => x.PlayerId == player.Id).ToListAsync();
+            var talisman = await db.Talismans.FindAsync(key);
+            if (talisman is null || owned.All(x => x.TalismanKey != key)) return Error("not_owned", "You do not own that talisman.", 404);
+            foreach (var row in owned) row.Equipped = row.TalismanKey == key;
+            await db.SaveChangesAsync();
+            return Results.Ok(await BuildRealm(db, player, $"{talisman.Name} equipped. It takes effect in your next duel."));
+        }).RequireAuthorization();
+
+        app.MapPost("/api/v1/realm/talismans/unequip", async (ClaimsPrincipal user, RuneDbContext db) =>
+        {
+            var player = await CurrentPlayer(user, db);
+            if (player is null) return NotFound();
+            await db.PlayerTalismans.Where(x => x.PlayerId == player.Id && x.Equipped).ExecuteUpdateAsync(x => x.SetProperty(t => t.Equipped, false));
+            return Results.Ok(await BuildRealm(db, player, "Talisman taken off."));
+        }).RequireAuthorization();
+
         app.MapPost("/api/v1/realm/objectives/{key}/claim", async (string key, ClaimsPrincipal user, RuneDbContext db, ServerSettings server) =>
         {
             var player = await CurrentPlayer(user, db);
@@ -186,6 +225,8 @@ public static class RealmEndpoints
         var total = await TotalMatches(db, player.Id);
         var slots = await db.EquipmentSlots.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync();
         var (rawTotals, cappedTotals) = await Equipment.Totals(db, player.Id);
+        var talismanDefs = await db.Talismans.AsNoTracking().Where(x => x.Enabled).OrderBy(x => x.SortOrder).ToListAsync();
+        var ownedTalismans = await db.PlayerTalismans.AsNoTracking().Where(x => x.PlayerId == player.Id).ToListAsync();
 
         return new
         {
@@ -196,6 +237,14 @@ public static class RealmEndpoints
                 .OrderBy(x => x.Item.SortOrder)
                 .Select(x => new { x.Item.Key, x.Item.Name, x.Item.Kind, x.Item.Icon, image = Equipment.ImageUrl(x.Item), x.Item.Description, x.Item.Rarity, x.Equipped, stats = Equipment.StatsObject(Equipment.Stats(x.Item)) }),
             shop = items.Where(x => x.InShop).OrderBy(x => x.PriceGems > 0).ThenBy(x => x.PriceCoins).Select(x => new { x.Key, x.Name, x.Kind, x.Icon, image = Equipment.ImageUrl(x), x.Description, x.Rarity, x.PriceCoins, x.PriceGems, owned = owned.Any(o => o.ItemKey == x.Key), stats = Equipment.StatsObject(Equipment.Stats(x)) }),
+            talismans = talismanDefs.Select(t => new
+            {
+                t.Key, t.Name, t.Icon, t.Effect, t.Drawback, t.Rarity, t.PriceCoins, t.Ranked,
+                charges = Talismans.Charges(t.Key),
+                active = Talismans.IsActive(t.Key),
+                owned = ownedTalismans.Any(o => o.TalismanKey == t.Key),
+                equipped = ownedTalismans.Any(o => o.TalismanKey == t.Key && o.Equipped)
+            }),
             build = new
             {
                 slots = slots.Select(slot =>
@@ -263,7 +312,7 @@ public static class RealmEndpoints
         row is null ? new PlayerSettingsDto(false, true, true, false) : new PlayerSettingsDto(row.ReduceMotion, row.DamageNumbers, row.DiceAnimation, row.CompactHud);
 
     private static async Task<Player?> CurrentPlayer(ClaimsPrincipal user, RuneDbContext db) =>
-        Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? await db.Players.FindAsync(id) : null;
+        Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && await db.Players.FindAsync(id) is { Banned: false } player ? player : null;
 
     private static IResult NotFound() => Error("not_found", "Player not found.", 404);
     private static IResult Error(string code, string message, int status) => Results.Json(new { error = new { code, message } }, statusCode: status);
