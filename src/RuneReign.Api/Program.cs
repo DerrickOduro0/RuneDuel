@@ -107,6 +107,7 @@ using (var seedScope = app.Services.CreateScope())
 
 app.MapRealmEndpoints();
 app.MapAdminEndpoints(seedRules);
+app.MapFriendEndpoints();
 
 app.MapGet("/api/v1/classes", (GameRules r) => Results.Ok(r.Classes));
 
@@ -741,9 +742,9 @@ app.MapGet("/api/v1/challenges/mine", async (ClaimsPrincipal user, RuneDbContext
             return Results.Ok(new { status = "accepted", matchId = (Guid?)match.Id, code = accepted.Code, expiresInSeconds = 0 });
     }
     var open = await OpenChallenge(db, player.Id);
-    return open is null
-        ? Results.Ok(new { status = "none", matchId = (Guid?)null, code = (string?)null, expiresInSeconds = 0 })
-        : Results.Ok(ChallengeDto(open));
+    if (open is null) return Results.Ok(new { status = "none", matchId = (Guid?)null, code = (string?)null, expiresInSeconds = 0 });
+    var invitee = open.InviteeId is Guid inviteeId ? (await db.Players.FindAsync(inviteeId))?.Username : null;
+    return Results.Ok(ChallengeDto(open, invitee));
 }).RequireAuthorization();
 
 app.MapDelete("/api/v1/challenges/mine", async (ClaimsPrincipal user, RuneDbContext db) =>
@@ -867,10 +868,11 @@ static string ChallengeCode()
     return new string(Enumerable.Range(0, 6).Select(_ => alphabet[Random.Shared.Next(alphabet.Length)]).ToArray());
 }
 
-static object ChallengeDto(FriendChallenge c) => new
+static object ChallengeDto(FriendChallenge c, string? invitee = null) => new
 {
     status = "open", matchId = (Guid?)null, code = c.Code,
-    expiresInSeconds = (int)Math.Max(0, (c.ExpiresAtUtc - DateTime.UtcNow).TotalSeconds)
+    expiresInSeconds = (int)Math.Max(0, (c.ExpiresAtUtc - DateTime.UtcNow).TotalSeconds),
+    invitee
 };
 
 static RematchState RematchDto(CombatMatch match, bool isA, ServerSettings server)
@@ -1146,6 +1148,7 @@ static void EnsureSqliteSchema(RuneDbContext db)
         ["CreatedAtUtc"] = "TEXT NOT NULL DEFAULT '2026-11-01 00:00:00'",
         ["LastSeenAtUtc"] = "TEXT NULL"
     });
+    AddMissingColumns(connection, "FriendChallenges", new Dictionary<string, string> { ["InviteeId"] = "TEXT NULL" });
     AddMissingColumns(connection, "Items", new Dictionary<string, string>
     {
         ["Edge"] = "INTEGER NOT NULL DEFAULT 0",

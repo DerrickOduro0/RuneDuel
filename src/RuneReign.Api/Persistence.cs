@@ -59,6 +59,19 @@ public sealed class FriendChallenge
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime ExpiresAtUtc { get; set; }
     public Guid? CombatMatchId { get; set; }
+    // Set when the challenge was sent straight to a friend; they see it as an invite. Anyone with the code can still join.
+    public Guid? InviteeId { get; set; }
+}
+
+// A friend request, and once accepted, a friendship. One row per pair of players.
+public sealed class Friendship
+{
+    public Guid Id { get; set; }
+    public Guid RequesterId { get; set; }
+    public Guid AddresseeId { get; set; }
+    public bool Accepted { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? AcceptedAtUtc { get; set; }
 }
 
 public sealed class CombatMatch
@@ -412,6 +425,7 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
     public DbSet<ObjectiveClaim> ObjectiveClaims => Set<ObjectiveClaim>();
     public DbSet<PlayerMessage> PlayerMessages => Set<PlayerMessage>();
     public DbSet<UploadedFile> UploadedFiles => Set<UploadedFile>();
+    public DbSet<Friendship> Friendships => Set<Friendship>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -429,6 +443,9 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
         builder.Entity<CombatMatch>().Property(x => x.Mode).HasMaxLength(16);
         builder.Entity<FriendChallenge>().HasIndex(x => x.Code).IsUnique();
         builder.Entity<FriendChallenge>().HasIndex(x => x.HostId);
+        builder.Entity<FriendChallenge>().HasIndex(x => x.InviteeId);
+        builder.Entity<Friendship>().HasIndex(x => new { x.RequesterId, x.AddresseeId }).IsUnique();
+        builder.Entity<Friendship>().HasIndex(x => x.AddresseeId);
         builder.Entity<FriendChallenge>().Property(x => x.Code).HasMaxLength(12);
         builder.Entity<CombatMatch>().HasIndex(x => x.PlayerAId);
         builder.Entity<CombatMatch>().HasIndex(x => x.PlayerBId);

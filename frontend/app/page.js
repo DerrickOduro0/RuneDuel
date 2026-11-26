@@ -55,6 +55,16 @@ async function request(path, options = {}, token) {
   return data;
 }
 
+// Friend requests and duel invites, checked in the background so the badge and invite banner stay current.
+const friendListeners = new Set();
+let friendState = { requests: 0, invites: [] };
+function setFriendState(value) { friendState = value; friendListeners.forEach((listener) => listener(value)); }
+function useFriendState() {
+  const [value, setValue] = useState(friendState);
+  useEffect(() => { friendListeners.add(setValue); return () => friendListeners.delete(setValue); }, []);
+  return value;
+}
+
 function WakeNotice() {
   const [waking, setWakingState] = useState(false);
   useEffect(() => { wakeListeners.add(setWakingState); return () => wakeListeners.delete(setWakingState); }, []);
@@ -323,6 +333,7 @@ export default function Home() {
   }
 
   async function logout() {
+    setFriendState({ requests: 0, invites: [] });
     clearInterval(pollRef.current);
     if (token) {
       try {
@@ -422,6 +433,42 @@ export default function Home() {
     setMatch({ status: "idle", opponent: null });
     window.localStorage.removeItem("runeMatchId");
     setScreen(screens.arena);
+  }
+
+  // Friends: refresh the badge and invites every 30 seconds while signed in.
+  const refreshFriends = useCallback(async (currentToken = token) => {
+    if (!currentToken) return;
+    try { setFriendState(await request("/friends/summary", {}, currentToken)); } catch { /* the next check will try again */ }
+  }, [token]);
+  useEffect(() => {
+    if (!token || !profile) return;
+    refreshFriends();
+    const timer = setInterval(() => refreshFriends(), 30000);
+    return () => clearInterval(timer);
+  }, [token, profile?.username, refreshFriends]);
+
+  // Sends a duel invite to a friend, then waits in the Arena like any friend challenge.
+  async function challengeFriend(friend) {
+    setError("");
+    try {
+      // The duel opens by itself when they join (checked every few seconds, wherever the player is).
+      const data = await request(`/friends/${friend.id}/challenge`, { method: "POST" }, token);
+      setChallenge(data);
+      pollChallenge();
+    } catch (value) {
+      if (value.status === 409) await refreshActive();
+      setNoticeToast(value.message || "Could not send the invite.");
+    }
+  }
+
+  async function answerInvite(invite, accept) {
+    if (accept) {
+      const ok = await joinChallenge(invite.code);
+      if (!ok) await refreshFriends();
+    } else {
+      await request(`/friends/invites/${invite.challengeId}/decline`, { method: "POST" }, token).catch(() => {});
+    }
+    await refreshFriends();
   }
 
   // Leaves the queue and starts a practice duel against the Shade, for when nobody else is searching.
@@ -675,6 +722,7 @@ export default function Home() {
   return (
     <main className="game-shell">
       <WakeNotice />
+      {profile && screen !== screens.combat && screen !== screens.match && <FriendInviteBanner onAnswer={answerInvite} />}
       <header className="game-header">
         <div className="brand-lockup"><div className="rune-crest">ᚱ</div><div><h1>Rune Duel</h1><p className="sub">The arcane arena awaits</p></div></div>
         {content?.season && <div className="season-badge">SEASON {content.season.number} <span>•</span> {content.season.title.toUpperCase()}</div>}
@@ -692,7 +740,7 @@ export default function Home() {
       </>}
       {screen === screens.combat && combat && <CombatScreen key={combat.matchId} settings={settings} content={content} combat={combat} onSubmit={submitCombatAction} onShape={shapeDice} onTalisman={useTalisman} onRefresh={refreshCombat} onGiveUp={giveUpCombat} onClaimWin={claimWin} onRematch={startShade} onAskRematch={requestRematch} onFindCasual={() => findMatch("casual")} onLoadRounds={loadMatchDetail} onTutorialEnd={finishTutorial} onHome={() => { setScreen(screens.home); }} onLeague={openLeague} />}
       {screen === screens.league && profile && <RankScreen league={league} content={content} profile={profile} loadHistory={loadHistory} loadRounds={loadMatchDetail} onBack={() => setScreen(screens.home)} onNavigate={openRealm} onLogout={logout} />}
-      {screen === screens.realm && profile && <RealmPage page={realmPage} content={content} profile={profile} classes={classes} league={league} realm={realm} busy={realmBusy} notice={realmNotice} onAction={realmAction} onBack={() => setScreen(screens.home)} onNavigate={openRealm} onLogout={logout} onLeague={openLeague} />}
+      {screen === screens.realm && profile && <RealmPage page={realmPage} content={content} profile={profile} classes={classes} league={league} realm={realm} busy={realmBusy} notice={realmNotice} onAction={realmAction} onBack={() => setScreen(screens.home)} onNavigate={openRealm} onLogout={logout} onLeague={openLeague} token={token} challenge={challenge} onChallengeFriend={challengeFriend} onCancelChallenge={cancelChallenge} onAnswerInvite={answerInvite} onFriendsChanged={refreshFriends} />}
       {settingsOpen && profile && <SettingsModal profile={profile} settings={settings} defaults={content?.settingsDefaults} onChange={updateSettings} onClose={() => setSettingsOpen(false)} onLogout={() => { setSettingsOpen(false); logout(); }} />}
     </main>
   );
@@ -734,7 +782,7 @@ function StatChips({ stats, attributes, compact = false }) {
   return <span className={`stat-chips ${compact ? "is-compact" : ""}`}>{list.map((item) => <span key={item.key} className={`stat-chip stat-${item.key}`} title={`${item.name}: ${item.effect}`}>{item.icon} +{stats[item.key]}{compact ? "" : ` ${item.name}`}</span>)}</span>;
 }
 
-function RealmPage({ page, content, profile, classes, league, realm, busy, notice, onAction, onBack, onNavigate, onLogout, onLeague }) {
+function RealmPage({ page, content, profile, classes, league, realm, busy, notice, onAction, onBack, onNavigate, onLogout, onLeague, token, challenge, onChallengeFriend, onCancelChallenge, onAnswerInvite, onFriendsChanged }) {
   const titles = {
     characters: ["Characters", "Study the four paths of rune magic."],
     inventory: ["Your build", "Equip gear to shape your attributes in battle."],
@@ -799,11 +847,160 @@ function RealmPage({ page, content, profile, classes, league, realm, busy, notic
     {realm && page === "rewards" && objectiveCards("reward")}
     {realm && page === "messages" && <div className="letters">{realm.messages.length === 0 && <p className="muted">No letters yet.</p>}{realm.messages.map((item) => <article className={`rank-card letter ${item.read ? "is-read" : ""}`} key={item.id}><span className="eyebrow">{item.sender}</span><h3>{item.subject}</h3><p>{item.body}</p><small className="muted">{new Date(item.createdAtUtc.endsWith("Z") ? item.createdAtUtc : `${item.createdAtUtc}Z`).toLocaleString()}</small>{!item.read && <button disabled={busy} onClick={() => onAction(`/realm/messages/${item.id}/read`)}>Mark as read</button>}</article>)}</div>}
     {page === "rankings" && <div className="rank-card"><h3>League rankings</h3>{league?.leaderboard?.slice(0, 10).map((player, index) => <div className="rank-line" key={player.username}><span>#{index + 1} {player.username}</span><strong>League {player.league} · {player.points} pts</strong></div>) || <p className="muted">Open League Hall to load rankings.</p>}<button onClick={onLeague}>Open League Hall</button></div>}
-    {page === "friends" && <div className="rank-card"><h3>Your circle is quiet</h3><p className="muted">Friend lists are not built yet, but you can duel a friend now: open the Arena, create a code under Friend Challenge and send it to them.</p></div>}
+    {page === "friends" && <FriendsPanel token={token} challenge={challenge} onChallenge={onChallengeFriend} onCancelChallenge={onCancelChallenge} onAnswerInvite={onAnswerInvite} onChanged={onFriendsChanged} />}
     {realm && page === "story" && <div className="cards">{realm.story.chapters.map((chapter) => <article className={`card story-card ${chapter.unlocked ? "" : "is-locked"}`} key={chapter.number}><span className="eyebrow">CHAPTER {chapter.number}</span><h3>{chapter.title}</h3><p>{chapter.unlocked ? chapter.body : `Unlocks after ${chapter.unlockMatches} finished duels. You have finished ${realm.story.totalMatches}.`}</p><button disabled={busy || !chapter.unlocked || chapter.started} className={chapter.started ? "secondary" : ""} onClick={() => onAction(`/realm/story/${chapter.number}/begin`)}>{chapter.started ? "Begun" : chapter.unlocked ? "Begin chapter" : "Locked"}</button></article>)}</div>}
     </section>
     <WorldBottomNav active={page} onHome={onBack} onNavigate={onNavigate} />
   </section>;
+}
+
+function seenText(friend) {
+  if (friend.inDuel) return "In a duel";
+  if (friend.online) return "Online";
+  if (!friend.lastSeenAtUtc) return "Not seen yet";
+  const value = friend.lastSeenAtUtc.endsWith("Z") ? friend.lastSeenAtUtc : `${friend.lastSeenAtUtc}Z`;
+  const minutes = (Date.now() - new Date(value).getTime()) / 60000;
+  if (minutes < 60) return `Seen ${Math.max(1, Math.round(minutes))} min ago`;
+  if (minutes < 60 * 24) return `Seen ${Math.round(minutes / 60)} h ago`;
+  return `Seen ${Math.round(minutes / 60 / 24)} d ago`;
+}
+
+// The Friends page: find players, answer requests, see who is online and challenge them.
+function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnswerInvite, onChanged }) {
+  const waitingFor = challenge?.invitee || null;
+  const [left, setLeft] = useState(challenge?.expiresInSeconds || 0);
+  useEffect(() => {
+    if (!challenge) return;
+    const end = Date.now() + (challenge.expiresInSeconds || 0) * 1000;
+    const timer = setInterval(() => setLeft(Math.max(0, Math.round((end - Date.now()) / 1000))), 500);
+    return () => clearInterval(timer);
+  }, [challenge?.code, challenge?.expiresInSeconds]);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+
+  const load = useCallback(async () => {
+    try { setData(await request("/friends", {}, token)); setError(""); } catch (value) { setError(value.message); }
+  }, [token]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 20000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  async function act(path, options, message) {
+    setBusy(true);
+    setNote("");
+    try {
+      const result = await request(path, options, token);
+      setNote(result?.message || message || "");
+      await load();
+      onChanged?.();
+      if (results) await search(query, true);
+    } catch (value) { setNote(value.message); }
+    setBusy(false);
+  }
+  async function search(term = query, quiet = false) {
+    if (term.trim().length < 2) { setResults(null); return; }
+    try { setResults(await request(`/friends/search?q=${encodeURIComponent(term.trim())}`, {}, token)); } catch (value) { if (!quiet) setNote(value.message); }
+  }
+  function remove(friend) {
+    if (!window.confirm(`Remove ${friend.username} from your friends?`)) return;
+    act(`/friends/${friend.id}`, { method: "DELETE" }, `${friend.username} was removed.`);
+  }
+
+  const relationButton = (player) => {
+    if (player.relation === "friend") return <span className="friend-state">Friends</span>;
+    if (player.relation === "sent") return <span className="friend-state">Request sent</span>;
+    if (player.relation === "received") return <button disabled={busy} onClick={() => act(`/friends/requests/${player.requestId}/accept`, { method: "POST" }, `You and ${player.username} are now friends.`)}>Accept</button>;
+    return <button disabled={busy} onClick={() => act("/friends/requests", { method: "POST", body: JSON.stringify({ username: player.username }) })}>Add friend</button>;
+  };
+
+  return <div className="friends">
+    <section className="friends-block">
+      <h3>Find mages</h3>
+      <form className="friends-search" onSubmit={(event) => { event.preventDefault(); search(); }}>
+        <input aria-label="Player name" placeholder="Type a player's name" value={query} maxLength={20} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length >= 2) search(event.target.value, true); else setResults(null); }} />
+        <button disabled={query.trim().length < 2}>Search</button>
+      </form>
+      {results && (results.length === 0 ? <p className="muted">No player matches that name.</p> :
+        <ul className="friend-list">{results.map((player) => <li key={player.id} className="friend-row">
+          <span className="friend-avatar">{player.username[0].toUpperCase()}</span>
+          <span className="friend-name"><b>{player.username}</b><small>{player.className || "No class yet"} · League {player.league}</small></span>
+          <span className="friend-row-actions">{relationButton(player)}</span>
+        </li>)}</ul>)}
+      {note && <p className="friends-note" role="status">{note}</p>}
+    </section>
+
+    {error && <p className="error">{error}</p>}
+    {!data ? !error && <p className="muted">Loading your friends…</p> : <>
+      {data.invites.length > 0 && <section className="friends-block is-invites">
+        <h3>Duel invites</h3>
+        <ul className="friend-list">{data.invites.map((invite) => <li key={invite.challengeId} className="friend-row">
+          <span className="friend-avatar">{invite.from[0].toUpperCase()}</span>
+          <span className="friend-name"><b>{invite.from}</b><small>{invite.fromClass} · challenges you to a duel</small></span>
+          <span className="friend-row-actions"><button disabled={busy} onClick={() => onAnswerInvite(invite, true)}>Join duel</button><button className="secondary" disabled={busy} onClick={async () => { await onAnswerInvite(invite, false); load(); }}>Decline</button></span>
+        </li>)}</ul>
+      </section>}
+
+      {data.incoming.length > 0 && <section className="friends-block">
+        <h3>Friend requests <span className="count-pill">{data.incoming.length}</span></h3>
+        <ul className="friend-list">{data.incoming.map((item) => <li key={item.requestId} className="friend-row">
+          <span className="friend-avatar">{item.player.username[0].toUpperCase()}</span>
+          <span className="friend-name"><b>{item.player.username}</b><small>{item.player.className || "No class yet"} · League {item.player.league}</small></span>
+          <span className="friend-row-actions">
+            <button disabled={busy} onClick={() => act(`/friends/requests/${item.requestId}/accept`, { method: "POST" }, `You and ${item.player.username} are now friends.`)}>Accept</button>
+            <button className="secondary" disabled={busy} onClick={() => act(`/friends/requests/${item.requestId}/decline`, { method: "POST" }, "Request declined.")}>Decline</button>
+          </span>
+        </li>)}</ul>
+      </section>}
+
+      <section className="friends-block">
+        <h3>Your friends <span className="count-pill">{data.friends.length}</span></h3>
+        {data.friends.length === 0 ? <p className="muted">No friends yet. Search for a player above and send them a request.</p> :
+          <ul className="friend-list">{data.friends.map(({ friend, record }) => <li key={friend.id} className={`friend-row ${friend.online || friend.inDuel ? "is-online" : ""}`}>
+            <span className="friend-avatar">{friend.username[0].toUpperCase()}<i className={`presence ${friend.inDuel ? "duel" : friend.online ? "on" : "off"}`} /></span>
+            <span className="friend-name"><b>{friend.username}</b><small>{friend.className || "No class yet"} · League {friend.league} · {seenText(friend)}</small>
+              <small className="friend-record">You vs them: {record.wins}W {record.losses}L{record.draws ? ` ${record.draws}D` : ""}</small></span>
+            {waitingFor === friend.username
+              ? <span className="friend-row-actions is-waiting"><span className="friend-wait-text">Invite sent · waiting {formatClock(left)}</span><button className="secondary" onClick={onCancelChallenge}>Cancel</button></span>
+              : <span className="friend-row-actions">
+                <button disabled={busy || friend.inDuel || !friend.className || Boolean(waitingFor)} title={friend.inDuel ? "They are in a duel right now" : waitingFor ? `You are waiting for ${waitingFor}` : undefined} onClick={() => onChallenge(friend)}>Challenge</button>
+                <button className="secondary friend-remove" disabled={busy} aria-label={`Remove ${friend.username}`} onClick={() => remove(friend)}>Remove</button>
+              </span>}
+          </li>)}</ul>}
+      </section>
+
+      {data.outgoing.length > 0 && <section className="friends-block">
+        <h3>Requests you sent</h3>
+        <ul className="friend-list">{data.outgoing.map((item) => <li key={item.requestId} className="friend-row">
+          <span className="friend-avatar">{item.player.username[0].toUpperCase()}</span>
+          <span className="friend-name"><b>{item.player.username}</b><small>Waiting for them to accept</small></span>
+          <span className="friend-row-actions"><button className="secondary" disabled={busy} onClick={() => act(`/friends/requests/${item.requestId}`, { method: "DELETE" }, "Request cancelled.")}>Cancel</button></span>
+        </li>)}</ul>
+      </section>}
+    </>}
+  </div>;
+}
+
+// Shown anywhere in the game (except during a duel) when a friend sends a duel invite.
+function FriendInviteBanner({ onAnswer }) {
+  const friends = useFriendState();
+  const [busy, setBusy] = useState(false);
+  const invite = friends.invites[0];
+  if (!invite) return null;
+  async function answer(accept) {
+    setBusy(true);
+    await onAnswer(invite, accept);
+    setBusy(false);
+  }
+  return <div className="invite-banner" role="alert">
+    <span className="invite-text"><b>{invite.from}</b> challenges you to a duel{friends.invites.length > 1 ? ` (+${friends.invites.length - 1} more)` : ""}</span>
+    <span className="invite-actions"><button disabled={busy} onClick={() => answer(true)}>Join</button><button className="secondary" disabled={busy} onClick={() => answer(false)}>Decline</button></span>
+  </div>;
 }
 
 const ICONS = {
@@ -855,10 +1052,12 @@ function WorldTopbar({ profile, onNavigate, onLogout, title, eyebrow, onBack }) 
 }
 
 function WorldRail({ onNavigate }) {
+  const friends = useFriendState();
+  const friendBadge = friends.requests + friends.invites.length;
   return <aside className="world-rail" aria-label="Realm activities">
     <button onClick={() => onNavigate("quests")}><span><Ico name="scroll" size={40} /></span>Quests</button>
     <button onClick={() => onNavigate("rankings")}><span><Ico name="trophy" size={40} /></span>Rankings</button>
-    <button onClick={() => onNavigate("friends")}><span><Ico name="friends" size={40} /></span>Friends</button>
+    <button onClick={() => onNavigate("friends")}><span><Ico name="friends" size={40} />{friendBadge > 0 && <b className="rail-badge">{friendBadge}</b>}</span>Friends</button>
   </aside>;
 }
 
@@ -1163,7 +1362,7 @@ function FriendChallengeActions({ challenge, busy, onCreate, onCancel, onJoin })
   if (challenge) return <div className="friend-actions is-hosting">
     <span className="friend-label">Your code</span>
     <button type="button" className="friend-code" onClick={copy} title="Copy the code">{challenge.code}</button>
-    <span className="friend-wait">{copied ? "Copied!" : `Waiting for your friend · ${formatClock(left)}`}</span>
+    <span className="friend-wait">{copied ? "Copied!" : `Waiting for ${challenge.invitee || "your friend"} · ${formatClock(left)}`}</span>
     <button type="button" className="secondary" onClick={onCancel}>Cancel code</button>
   </div>;
   return <div className="friend-actions">

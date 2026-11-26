@@ -1317,3 +1317,40 @@ button{text-shadow:none}
 .search-shade p{margin:0;color:#d5dbe1;line-height:1.45}
 .search-shade b{color:#fff}
 .search-shade .actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---- Friends ---- */
+.friends{display:grid;gap:14px;max-width:860px;width:100%;margin:0 auto}
+.friends-block{background:#1b2027e6;border-radius:6px;padding:16px 18px;display:grid;gap:12px}
+.friends-block h3{margin:0;font-size:1.05rem;color:#fff;display:flex;align-items:center;gap:8px}
+.friends-block.is-invites{box-shadow:inset 3px 0 0 #f2b632}
+.count-pill{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#ffffff1a;color:#d5dbe1;font-size:.75rem}
+.friends-search{display:flex;gap:8px}
+.friends-search input{flex:1;min-width:0}
+.friends-note{margin:0;color:#d5dbe1;font-weight:600}
+.friend-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.friend-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:8px 10px;border-radius:5px;background:#ffffff08}
+.friend-row.is-online{background:#ffffff10}
+.friend-avatar{position:relative;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#2b3138;color:#f2b632;font-weight:800;font-size:1.1rem}
+.presence{position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;border-radius:50%;border:2px solid #1b2027;background:#5c6672}
+.presence.on{background:#4fb36b}.presence.duel{background:#f2b632}
+.friend-name{display:grid;min-width:0}
+.friend-name b{color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.friend-name small{color:#9aa5b1}
+.friend-record{color:#c9d1d9 !important}
+.friend-row-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.friend-row-actions button{padding:8px 14px;min-height:0}
+.friend-state{color:#9aa5b1;font-weight:600;font-size:.9rem}
+.world-rail button span{position:relative}
+.rail-badge{position:absolute;top:-6px;right:-8px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#e0624f;color:#fff;font-size:.75rem;font-weight:800;display:grid;place-items:center;box-shadow:0 2px 6px #0008}
+/* A friend's duel invite, shown on any screen except a duel */
+.invite-banner{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:190;display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;padding:12px 16px;border-radius:6px;background:#11151a;color:#e6eaee;box-shadow:0 10px 30px #000a,inset 3px 0 0 #f2b632;max-width:calc(100vw - 32px)}
+.invite-text b{color:#f6c75a}
+.invite-actions{display:flex;gap:8px}
+.invite-actions button{padding:8px 16px;min-height:0}
+@media (max-width:560px){
+  .friend-row{grid-template-columns:auto 1fr}
+  .friend-row-actions{grid-column:1/-1;justify-content:flex-start}
+  .invite-banner{bottom:84px}
+}
+.friend-row-actions.is-waiting{align-items:center}
+.friend-wait-text{color:#f6c75a;font-weight:700;font-size:.9rem}
