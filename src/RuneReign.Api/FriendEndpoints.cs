@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace RuneReign.Api;
 
 public sealed record FriendRequestBody(string Username);
-public sealed record FriendPerson(Guid Id, string Username, string? ClassName, int League, int Points, bool Online, bool InDuel, DateTime? LastSeenAtUtc);
+public sealed record FriendPerson(Guid Id, string Username, string? ClassName, int League, int Points, bool Online, bool InDuel, DateTime? LastSeenAtUtc, string? AvatarUrl, int Level);
 
 // Friends: requests, the friend list with who is online, and challenging a friend straight to a duel.
 public static class FriendEndpoints
@@ -50,7 +50,8 @@ public static class FriendEndpoints
                 .Select(x => new { x.PlayerAId, x.PlayerBId, x.WinnerId, x.IsDraw }).ToListAsync();
 
             FriendPerson Person(Player p) => new(p.Id, p.Username, p.ClassName, p.League, p.Points,
-                p.LastSeenAtUtc is DateTime seen && DateTime.UtcNow - seen < OnlineWindow, busy.Contains(p.Id), p.LastSeenAtUtc);
+                p.LastSeenAtUtc is DateTime seen && DateTime.UtcNow - seen < OnlineWindow, busy.Contains(p.Id), p.LastSeenAtUtc,
+                ProfileEndpoints.AvatarUrl(p), Progression.LevelFor(p.Xp));
 
             var list = rows.Where(x => x.Accepted && players.ContainsKey(Other(x, me.Id))).Select(x =>
             {
@@ -95,7 +96,7 @@ public static class FriendEndpoints
             {
                 var link = links.FirstOrDefault(x => x.RequesterId == p.Id || x.AddresseeId == p.Id);
                 var relation = link is null ? "none" : link.Accepted ? "friend" : link.RequesterId == me.Id ? "sent" : "received";
-                return new { id = p.Id, username = p.Username, className = p.ClassName, league = p.League, relation, requestId = link?.Id };
+                return new { id = p.Id, username = p.Username, className = p.ClassName, league = p.League, relation, requestId = link?.Id, avatarUrl = ProfileEndpoints.AvatarUrl(p), level = Progression.LevelFor(p.Xp) };
             }));
         });
 
@@ -222,7 +223,7 @@ public static class FriendEndpoints
         var hosts = await db.Players.AsNoTracking().Where(x => hostIds.Contains(x.Id) && !x.Banned).ToDictionaryAsync(x => x.Id);
         return rows.Where(x => hosts.ContainsKey(x.HostId)).Select(x => (object)new
         {
-            challengeId = x.Id, code = x.Code, from = hosts[x.HostId].Username, fromClass = hosts[x.HostId].ClassName,
+            challengeId = x.Id, code = x.Code, from = hosts[x.HostId].Username, fromClass = hosts[x.HostId].ClassName, fromAvatar = ProfileEndpoints.AvatarUrl(hosts[x.HostId]),
             expiresInSeconds = (int)(x.ExpiresAtUtc - now).TotalSeconds
         }).ToList();
     }

@@ -178,6 +178,26 @@ public static class AdminInsights
             return Results.Ok(new { done = true });
         });
 
+        // Removes a player's picture, for example if it is not suitable. They can upload another.
+        admin.MapDelete("/players/{id:guid}/avatar", async (Guid id, RuneDbContext db) =>
+        {
+            var p = await db.Players.FindAsync(id);
+            if (p is null) return Error("not_found", "Player not found.", 404);
+            await ProfileEndpoints.RemoveAvatar(db, p);
+            await db.SaveChangesAsync();
+            return Results.Ok(new { done = true });
+        });
+
+        // Clears a player's motto, for the same reason.
+        admin.MapDelete("/players/{id:guid}/motto", async (Guid id, RuneDbContext db) =>
+        {
+            var p = await db.Players.FindAsync(id);
+            if (p is null) return Error("not_found", "Player not found.", 404);
+            p.Motto = "";
+            await db.SaveChangesAsync();
+            return Results.Ok(new { done = true });
+        });
+
         admin.MapPost("/players/{id:guid}/items", async (Guid id, AdminGrant body, RuneDbContext db) =>
         {
             if (await db.Players.FindAsync(id) is null) return Error("not_found", "Player not found.", 404);
@@ -278,7 +298,8 @@ public static class AdminInsights
     public static object PlayerRow(Player p) => new
     {
         p.Id, p.Username, p.Email, p.ClassName, p.League, p.Points, p.SkillRating, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems,
-        p.IsAdmin, p.Banned, p.TutorialDone, p.StoryChapter, p.CreatedAtUtc, p.LastSeenAtUtc
+        p.IsAdmin, p.Banned, p.TutorialDone, p.StoryChapter, p.CreatedAtUtc, p.LastSeenAtUtc,
+        p.Xp, level = Progression.LevelFor(p.Xp), avatarUrl = ProfileEndpoints.AvatarUrl(p), p.Motto, p.WinStreak, p.BestWinStreak, p.BestLeague
     };
 
     private static async Task<List<object>> MatchRows(RuneDbContext db, IQueryable<CombatMatch> query)

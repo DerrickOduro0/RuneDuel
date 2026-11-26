@@ -55,6 +55,20 @@ async function request(path, options = {}, token) {
   return data;
 }
 
+// Any screen can open the profile panel: openProfile() for your own, openProfile("name") for another player.
+const profileOpeners = new Set();
+function openProfile(username = null) { profileOpeners.forEach((open) => open({ username })); }
+
+// A player's picture, or their first letter when they have none.
+function Avatar({ url, name, size = 42, className = "" }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [url]);
+  // size null: the stylesheet decides the size (the home profile chip).
+  return <span className={`avatar ${className}`} style={size ? { width: size, height: size, fontSize: size * 0.42 } : undefined}>
+    {url && !failed ? <img src={url} alt="" onError={() => setFailed(true)} /> : (name || "?").slice(0, 1).toUpperCase()}
+  </span>;
+}
+
 // Friend requests and duel invites, checked in the background so the badge and invite banner stay current.
 const friendListeners = new Set();
 let friendState = { requests: 0, invites: [] };
@@ -435,6 +449,10 @@ export default function Home() {
     setScreen(screens.arena);
   }
 
+  // The profile panel (yours or another player's).
+  const [profileView, setProfileView] = useState(null);
+  useEffect(() => { profileOpeners.add(setProfileView); return () => profileOpeners.delete(setProfileView); }, []);
+
   // Friends: refresh the badge and invites every 30 seconds while signed in.
   const refreshFriends = useCallback(async (currentToken = token) => {
     if (!currentToken) return;
@@ -723,6 +741,7 @@ export default function Home() {
     <main className="game-shell">
       <WakeNotice />
       {profile && screen !== screens.combat && screen !== screens.match && <FriendInviteBanner onAnswer={answerInvite} />}
+      {profile && profileView && <ProfilePanel token={token} username={profileView.username} me={profile} onClose={() => setProfileView(null)} onChanged={() => refreshProfile()} onLogout={() => { setProfileView(null); logout(); }} />}
       <header className="game-header">
         <div className="brand-lockup"><div className="rune-crest">ᚱ</div><div><h1>Rune Duel</h1><p className="sub">The arcane arena awaits</p></div></div>
         {content?.season && <div className="season-badge">SEASON {content.season.number} <span>•</span> {content.season.title.toUpperCase()}</div>}
@@ -928,8 +947,8 @@ function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnsw
       </form>
       {results && (results.length === 0 ? <p className="muted">No player matches that name.</p> :
         <ul className="friend-list">{results.map((player) => <li key={player.id} className="friend-row">
-          <span className="friend-avatar">{player.username[0].toUpperCase()}</span>
-          <span className="friend-name"><b>{player.username}</b><small>{player.className || "No class yet"} · League {player.league}</small></span>
+          <button type="button" className="friend-who" onClick={() => openProfile(player.username)}><Avatar url={player.avatarUrl} name={player.username} className="friend-avatar" />
+          <span className="friend-name"><b>{player.username}</b><small>Lv {player.level} · {player.className || "No class yet"} · League {player.league}</small></span></button>
           <span className="friend-row-actions">{relationButton(player)}</span>
         </li>)}</ul>)}
       {note && <p className="friends-note" role="status">{note}</p>}
@@ -940,7 +959,7 @@ function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnsw
       {data.invites.length > 0 && <section className="friends-block is-invites">
         <h3>Duel invites</h3>
         <ul className="friend-list">{data.invites.map((invite) => <li key={invite.challengeId} className="friend-row">
-          <span className="friend-avatar">{invite.from[0].toUpperCase()}</span>
+          <Avatar url={invite.fromAvatar} name={invite.from} className="friend-avatar" />
           <span className="friend-name"><b>{invite.from}</b><small>{invite.fromClass} · challenges you to a duel</small></span>
           <span className="friend-row-actions"><button disabled={busy} onClick={() => onAnswerInvite(invite, true)}>Join duel</button><button className="secondary" disabled={busy} onClick={async () => { await onAnswerInvite(invite, false); load(); }}>Decline</button></span>
         </li>)}</ul>
@@ -949,8 +968,8 @@ function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnsw
       {data.incoming.length > 0 && <section className="friends-block">
         <h3>Friend requests <span className="count-pill">{data.incoming.length}</span></h3>
         <ul className="friend-list">{data.incoming.map((item) => <li key={item.requestId} className="friend-row">
-          <span className="friend-avatar">{item.player.username[0].toUpperCase()}</span>
-          <span className="friend-name"><b>{item.player.username}</b><small>{item.player.className || "No class yet"} · League {item.player.league}</small></span>
+          <button type="button" className="friend-who" onClick={() => openProfile(item.player.username)}><Avatar url={item.player.avatarUrl} name={item.player.username} className="friend-avatar" />
+          <span className="friend-name"><b>{item.player.username}</b><small>Lv {item.player.level} · {item.player.className || "No class yet"} · League {item.player.league}</small></span></button>
           <span className="friend-row-actions">
             <button disabled={busy} onClick={() => act(`/friends/requests/${item.requestId}/accept`, { method: "POST" }, `You and ${item.player.username} are now friends.`)}>Accept</button>
             <button className="secondary" disabled={busy} onClick={() => act(`/friends/requests/${item.requestId}/decline`, { method: "POST" }, "Request declined.")}>Decline</button>
@@ -962,9 +981,9 @@ function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnsw
         <h3>Your friends <span className="count-pill">{data.friends.length}</span></h3>
         {data.friends.length === 0 ? <p className="muted">No friends yet. Search for a player above and send them a request.</p> :
           <ul className="friend-list">{data.friends.map(({ friend, record }) => <li key={friend.id} className={`friend-row ${friend.online || friend.inDuel ? "is-online" : ""}`}>
-            <span className="friend-avatar">{friend.username[0].toUpperCase()}<i className={`presence ${friend.inDuel ? "duel" : friend.online ? "on" : "off"}`} /></span>
-            <span className="friend-name"><b>{friend.username}</b><small>{friend.className || "No class yet"} · League {friend.league} · {seenText(friend)}</small>
-              <small className="friend-record">You vs them: {record.wins}W {record.losses}L{record.draws ? ` ${record.draws}D` : ""}</small></span>
+            <button type="button" className="friend-who" onClick={() => openProfile(friend.username)}><span className="friend-avatar-wrap"><Avatar url={friend.avatarUrl} name={friend.username} className="friend-avatar" /><i className={`presence ${friend.inDuel ? "duel" : friend.online ? "on" : "off"}`} /></span>
+            <span className="friend-name"><b>{friend.username}</b><small>Lv {friend.level} · {friend.className || "No class yet"} · League {friend.league} · {seenText(friend)}</small>
+              <small className="friend-record">You vs them: {record.wins}W {record.losses}L{record.draws ? ` ${record.draws}D` : ""}</small></span></button>
             {waitingFor === friend.username
               ? <span className="friend-row-actions is-waiting"><span className="friend-wait-text">Invite sent · waiting {formatClock(left)}</span><button className="secondary" onClick={onCancelChallenge}>Cancel</button></span>
               : <span className="friend-row-actions">
@@ -977,12 +996,169 @@ function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnsw
       {data.outgoing.length > 0 && <section className="friends-block">
         <h3>Requests you sent</h3>
         <ul className="friend-list">{data.outgoing.map((item) => <li key={item.requestId} className="friend-row">
-          <span className="friend-avatar">{item.player.username[0].toUpperCase()}</span>
+          <Avatar url={item.player.avatarUrl} name={item.player.username} className="friend-avatar" />
           <span className="friend-name"><b>{item.player.username}</b><small>Waiting for them to accept</small></span>
           <span className="friend-row-actions"><button className="secondary" disabled={busy} onClick={() => act(`/friends/requests/${item.requestId}`, { method: "DELETE" }, "Request cancelled.")}>Cancel</button></span>
         </li>)}</ul>
       </section>}
     </>}
+  </div>;
+}
+
+// Crops a picture to a centred square and shrinks it to 256 x 256, so uploads stay small whatever the phone camera produced.
+async function squareAvatar(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error("That file is not a picture we can read.")); img.src = url; });
+    const side = Math.min(image.naturalWidth, image.naturalHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = 256; canvas.height = 256;
+    const context = canvas.getContext("2d");
+    context.imageSmoothingQuality = "high";
+    context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+    const toBlob = (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+    // WebP where the browser can make it, otherwise JPEG.
+    let blob = await toBlob("image/webp", 0.86);
+    if (!blob || blob.type !== "image/webp") blob = await toBlob("image/jpeg", 0.88);
+    return blob;
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function recordText(r) {
+  if (!r?.played) return "No duels yet";
+  return `${r.wins}W · ${r.losses}L${r.draws ? ` · ${r.draws}D` : ""}`;
+}
+function sinceText(value) {
+  if (!value) return "—";
+  return new Date(value.endsWith?.("Z") ? value : `${value}Z`).toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
+}
+
+// The profile panel: an overview of an account. Your own adds the picture, motto and account settings.
+function ProfilePanel({ token, username, me, onClose, onChanged, onLogout }) {
+  const own = !username || username.toLowerCase() === me.username.toLowerCase();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const [motto, setMotto] = useState("");
+  const [editingMotto, setEditingMotto] = useState(false);
+  const [passwords, setPasswords] = useState({ current: "", next: "" });
+  const [showPassword, setShowPassword] = useState(false);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    const path = own ? "/me/profile" : `/players/${encodeURIComponent(username)}/profile`;
+    request(path, {}, token).then((d) => { setData(d); setMotto(d.motto || ""); }).catch((e) => setError(e.message));
+  }, [own, username, token]);
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function run(work, done) {
+    setBusy(true); setNote("");
+    try { const result = await work(); if (result) setData(result); if (done) setNote(done); onChanged?.(); } catch (e) { setNote(e.message); }
+    setBusy(false);
+  }
+  async function upload(file) {
+    if (!file) return;
+    await run(async () => {
+      const blob = await squareAvatar(file);
+      const body = new FormData();
+      body.append("file", blob, blob.type === "image/webp" ? "avatar.webp" : "avatar.jpg");
+      const response = await fetch("/api/v1/me/avatar", { method: "POST", body, headers: { Authorization: `Bearer ${token}` } });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error?.message || "Could not upload that picture.");
+      return result;
+    }, "Picture updated.");
+  }
+
+  const p = data?.progress;
+  const xpShare = p ? (p.maxLevel ? 100 : Math.min(100, (p.xp / Math.max(1, p.xpToNext)) * 100)) : 0;
+  const tile = (label, value, sub) => <div className="profile-tile"><span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}</div>;
+
+  return <div className="profile-overlay" role="dialog" aria-modal="true" aria-label={own ? "Your profile" : `${username}'s profile`} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="profile-panel">
+      <button type="button" className="profile-close" onClick={onClose} aria-label="Close">×</button>
+      {error && <p className="error">{error}</p>}
+      {!data ? !error && <p className="muted">Loading profile…</p> : <>
+        <header className="profile-head">
+          <div className="profile-avatar-wrap">
+            <span className="profile-avatar-ring"><Avatar url={data.avatarUrl} name={data.username} size={108} className="profile-avatar" /><b className="level-badge big">{p.level}</b></span>
+            {own && <button type="button" className="profile-avatar-edit" disabled={busy} onClick={() => fileRef.current?.click()}>{data.avatarUrl ? "Change" : "Add picture"}</button>}
+            {own && <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} aria-hidden="true" tabIndex={-1} onChange={(event) => { upload(event.target.files?.[0]); event.target.value = ""; }} />}
+          </div>
+          <div className="profile-id">
+            <h2>{data.username}</h2>
+            <p className="profile-sub">{data.className || "No class yet"} · {data.league.name}</p>
+            {own && editingMotto
+              ? <form className="profile-motto-edit" onSubmit={(event) => { event.preventDefault(); run(() => request("/me/profile", { method: "PUT", body: JSON.stringify({ motto }) }, token), "Motto saved.").then(() => setEditingMotto(false)); }}>
+                  <input value={motto} maxLength={60} autoFocus placeholder="A line about you (60 characters)" onChange={(event) => setMotto(event.target.value)} />
+                  <button disabled={busy}>Save</button><button type="button" className="secondary" onClick={() => { setMotto(data.motto || ""); setEditingMotto(false); }}>Cancel</button>
+                </form>
+              : <p className="profile-motto">{data.motto ? `“${data.motto}”` : own ? <span className="muted">No motto yet.</span> : null}
+                  {own && <button type="button" className="link-button" onClick={() => setEditingMotto(true)}>{data.motto ? "Edit" : "Write one"}</button>}</p>}
+            <div className="profile-level">
+              <div className="profile-level-top"><b>Level {p.level}</b><span>{p.maxLevel ? "Highest level" : `${p.xp} / ${p.xpToNext} XP`}</span></div>
+              <div className="profile-xp" role="progressbar" aria-valuemin={0} aria-valuemax={p.xpToNext} aria-valuenow={p.xp}><i style={{ width: `${xpShare}%` }} /></div>
+              <small>{p.totalXp.toLocaleString()} XP in total. XP comes from every duel and never goes down.</small>
+            </div>
+          </div>
+        </header>
+        {note && <p className="profile-note" role="status">{note}</p>}
+        {data.versus && <p className="profile-versus">You vs {data.username}: <b>{data.versus.wins}W · {data.versus.losses}L{data.versus.draws ? ` · ${data.versus.draws}D` : ""}</b></p>}
+
+        <section className="profile-section">
+          <h3>Standing</h3>
+          <div className="profile-tiles">
+            {tile("League", data.league.name, `${data.league.points} / ${data.league.pointsPerLeague} points`)}
+            {tile("Best league", data.league.best)}
+            {tile("Skill rating", data.rating, "Used for matchmaking")}
+            {tile("This season", `${data.season.wins}W of ${data.season.matches}`)}
+          </div>
+        </section>
+
+        <section className="profile-section">
+          <h3>Record</h3>
+          <div className="profile-tiles">
+            {tile("All PvP duels", recordText(data.pvp), data.pvp.played ? `${data.pvp.winRate}% wins` : null)}
+            {tile("Ranked", recordText(data.ranked))}
+            {tile("Casual", recordText(data.casual))}
+            {tile("Friend duels", recordText(data.friendDuels))}
+            {tile("Against the Shade", recordText(data.practice))}
+            {tile("Win streak", data.streak.current, `Best ${data.streak.best}`)}
+          </div>
+        </section>
+
+        <section className="profile-section">
+          <h3>Collection</h3>
+          <div className="profile-tiles">
+            {tile("Friends", data.friends)}
+            {tile("Items", data.itemsOwned)}
+            {tile("Talismans", data.talismansOwned, data.equippedTalisman ? `Using ${data.equippedTalisman}` : "None equipped")}
+            {tile("Member since", sinceText(data.memberSince))}
+            {own && data.wallet && tile("Wallet", `${data.wallet.coins.toLocaleString()} coins`, `${data.wallet.gems} gems`)}
+          </div>
+        </section>
+
+        {own && <section className="profile-section">
+          <h3>Account</h3>
+          <div className="profile-account">
+            <div className="profile-row"><span>Email</span><b>{data.email}</b></div>
+            {data.avatarUrl && <div className="profile-row"><span>Picture</span><button type="button" className="secondary" disabled={busy} onClick={() => run(() => request("/me/avatar", { method: "DELETE" }, token), "Picture removed.")}>Remove picture</button></div>}
+            {!showPassword
+              ? <div className="profile-row"><span>Password</span><button type="button" className="secondary" onClick={() => setShowPassword(true)}>Change password</button></div>
+              : <form className="profile-password" onSubmit={(event) => { event.preventDefault(); run(async () => { await request("/me/password", { method: "POST", body: JSON.stringify({ currentPassword: passwords.current, newPassword: passwords.next }) }, token); setPasswords({ current: "", next: "" }); setShowPassword(false); return null; }, "Password changed."); }}>
+                  <input type="password" autoComplete="current-password" placeholder="Current password" value={passwords.current} onChange={(event) => setPasswords({ ...passwords, current: event.target.value })} />
+                  <input type="password" autoComplete="new-password" placeholder="New password (8+ characters)" value={passwords.next} onChange={(event) => setPasswords({ ...passwords, next: event.target.value })} />
+                  <div className="actions"><button disabled={busy || !passwords.current || passwords.next.length < 8}>Save password</button><button type="button" className="secondary" onClick={() => setShowPassword(false)}>Cancel</button></div>
+                </form>}
+            <div className="profile-row"><span>Signed in as {data.username}</span><button type="button" className="secondary" onClick={onLogout}>Log out</button></div>
+          </div>
+        </section>}
+      </>}
+    </div>
   </div>;
 }
 
@@ -1030,17 +1206,18 @@ function Ico({ name, size = 28 }) {
 // On the home screen the top bar shows the player card. On menu pages (title given) it becomes
 // a slim full-width bar with a back button and the page title; the wallet is on every page.
 function WorldTopbar({ profile, onNavigate, onLogout, title, eyebrow, onBack }) {
-  const progress = Math.min(100, profile.points / profile.pointsPerLeague * 100);
+  const level = profile.progress || { level: 1, xp: 0, xpToNext: 100 };
+  const xpShare = level.maxLevel ? 100 : Math.min(100, (level.xp / Math.max(1, level.xpToNext)) * 100);
   return <header className={`world-topbar ${title ? "is-menu" : ""}`}>
     {title
       ? <div className="menu-head">
           {onBack && <button className="world-icon menu-back" onClick={onBack} aria-label="Back"><span aria-hidden="true">‹</span></button>}
           <div className="menu-title">{eyebrow && <span className="eyebrow">{eyebrow}</span>}<strong>{title}</strong></div>
         </div>
-      : <div className="world-player">
-          <div className="world-avatar">{profile.username.slice(0, 1).toUpperCase()}</div>
-          <div className="world-player-copy"><strong>{profile.username}</strong><span>{profile.leagueName} · {profile.className}</span><div className="world-xp"><i style={{ width: `${progress}%` }} /></div><small>Points&nbsp; {profile.points} / {profile.pointsPerLeague}</small></div>
-        </div>}
+      : <button type="button" className="world-player" onClick={() => openProfile()} aria-label="Open your profile">
+          <span className="world-avatar-wrap"><Avatar url={profile.avatarUrl} name={profile.username} size={null} className="world-avatar" /><b className="level-badge">{level.level}</b></span>
+          <div className="world-player-copy"><strong>{profile.username}</strong><span>{profile.leagueName} · {profile.points}/{profile.pointsPerLeague} pts</span><div className="world-xp"><i style={{ width: `${xpShare}%` }} /></div><small>Level {level.level}&nbsp;·&nbsp;{level.maxLevel ? "max" : `${level.xp} / ${level.xpToNext} XP`}</small></div>
+        </button>}
     <div className="world-currencies">
       <div className="pill" role="button" tabIndex={0} onClick={() => onNavigate("shop")} onKeyDown={(event) => { if (event.key === "Enter") onNavigate("shop"); }} aria-label={`${profile.gems ?? 0} gems. Open the shop`}><Ico name="gem" size={26} /><strong>{(profile.gems ?? 0).toLocaleString()}</strong><b><Ico name="plus" size={20} /></b></div>
       <div className="pill" role="button" tabIndex={0} onClick={() => onNavigate("shop")} onKeyDown={(event) => { if (event.key === "Enter") onNavigate("shop"); }} aria-label={`${profile.coins ?? 0} coins. Open the shop`}><Ico name="coin" size={26} /><strong>{(profile.coins ?? 0).toLocaleString()}</strong><b><Ico name="plus" size={20} /></b></div>
@@ -1915,8 +2092,11 @@ function ResultSummary({ combat, onLoadRounds }) {
         <div><dt>Skill rating</dt><dd className={result.ratingDelta >= 0 ? "is-up" : "is-down"}>{signed(result.ratingDelta)}</dd></div>
       </>}
       {combat.mode !== "friend" && <div><dt>Coins</dt><dd className="is-up">+{result.coins}</dd></div>}
+      <div><dt>Experience</dt><dd className="is-xp">+{result.xp ?? 0} XP</dd></div>
       <div><dt>Turns</dt><dd>{result.turns}</dd></div>
     </dl>}
+    {result && combat.practice && result.xp > 0 && <dl className="result-rows"><div><dt>Experience</dt><dd className="is-xp">+{result.xp} XP</dd></div></dl>}
+    {result?.levelUp && <p className="result-levelup"><b>Level {result.levelUp.level}!</b> +{result.levelUp.coins} coins{result.levelUp.gems ? ` · +${result.levelUp.gems} gems` : ""}</p>}
     {result?.leagueChange > 0 && <p className="result-promo">Promoted! You climbed {result.leagueChange} league{result.leagueChange > 1 ? "s" : ""}.</p>}
     {result?.leagueChange < 0 && <p className="result-demo">You dropped a league. Win your way back.</p>}
     <button type="button" className="secondary result-rounds-toggle" onClick={toggle} aria-expanded={open}>{open ? "Hide rounds" : "Round by round"}</button>
@@ -1943,7 +2123,7 @@ function HistoryList({ loadHistory, loadRounds }) {
       <button type="button" className="history-head" onClick={() => toggle(item.matchId)} aria-expanded={openId === item.matchId}>
         <span className={`history-result is-${item.result}`}>{item.result === "win" ? "Victory" : item.result === "loss" ? "Defeat" : "Draw"}</span>
         <span className="history-vs"><strong>vs {item.opponent}</strong><small>{item.myClass} vs {item.opponentClass}{item.practice ? " · practice" : item.mode && item.mode !== "ranked" ? ` · ${item.mode}` : ""} · {item.turns} turns</small></span>
-        {item.practice || item.mode === "friend" ? <span className="history-delta muted">No points</span> : item.mode === "casual" ? <span className="history-delta"><b className="is-up">+{item.coins} coins</b><small>Casual · no points</small></span> : <span className="history-delta"><b className={item.pointsDelta >= 0 ? "is-up" : "is-down"}>{signed(item.pointsDelta)} pts</b><small>{signed(item.ratingDelta)} rating · +{item.coins} coins</small></span>}
+        {item.practice || item.mode === "friend" ? <span className="history-delta muted">{item.xp ? <b className="is-xp">+{item.xp} XP</b> : null}<small>No points</small></span> : item.mode === "casual" ? <span className="history-delta"><b className="is-up">+{item.coins} coins</b><small>Casual · no points · +{item.xp ?? 0} XP</small></span> : <span className="history-delta"><b className={item.pointsDelta >= 0 ? "is-up" : "is-down"}>{signed(item.pointsDelta)} pts</b><small>{signed(item.ratingDelta)} rating · +{item.coins} coins · +{item.xp ?? 0} XP</small></span>}
         <time className="history-time">{new Date(String(item.completedAtUtc).endsWith("Z") ? item.completedAtUtc : `${item.completedAtUtc}Z`).toLocaleDateString()}</time>
       </button>
       {openId === item.matchId && <RoundsList rounds={rounds[item.matchId]} />}

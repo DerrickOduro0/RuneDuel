@@ -168,9 +168,10 @@ function Players({ notify, onPlayer }) {
       <p className="adm-muted">Most recently active first. Click a player to see everything about them and make changes.</p>
     </div>
     {error && <p className="adm-error">{error}</p>}
-    {!rows ? <p className="adm-muted">Loading…</p> : <table className="adm-table click"><thead><tr><th>Player</th><th>Class</th><th>League</th><th>Rating</th><th>Season</th><th>Coins</th><th>Gems</th><th>Joined</th><th>Last seen</th></tr></thead>
+    {!rows ? <p className="adm-muted">Loading…</p> : <table className="adm-table click"><thead><tr><th>Player</th><th>Level</th><th>Class</th><th>League</th><th>Rating</th><th>Season</th><th>Coins</th><th>Gems</th><th>Joined</th><th>Last seen</th></tr></thead>
       <tbody>{rows.map((p) => <tr key={p.id} className={p.banned ? "banned" : ""} onClick={() => onPlayer(p.id)}>
         <td><b>{p.username}</b>{p.isAdmin && <span className="adm-tag">admin</span>}{p.banned && <span className="adm-tag bad">banned</span>}<small className="adm-block">{p.email}</small></td>
+        <td>{p.level}</td>
         <td>{p.className || "—"}</td>
         <td>{p.league} · {p.points} pts</td>
         <td>{p.skillRating}</td>
@@ -224,13 +225,19 @@ function PlayerDetail({ id, me, notify, onMatch, onClose }) {
       {error && <p className="adm-error">{error}</p>}
       {!data ? <p className="adm-muted">Loading…</p> : <>
         <div className="adm-profile">
-          <span className="adm-avatar">{data.player.username[0].toUpperCase()}</span>
+          <span className="adm-avatar">{data.player.avatarUrl ? <img src={data.player.avatarUrl} alt="" /> : data.player.username[0].toUpperCase()}</span>
           <div>
             <h2>{data.player.username}{data.player.isAdmin && <span className="adm-tag">admin</span>}{data.player.banned && <span className="adm-tag bad">banned</span>}</h2>
             <p className="adm-muted">{data.player.email}</p>
+            {data.player.motto && <p className="adm-motto">“{data.player.motto}”</p>}
+            <div className="adm-actions left tight">
+              {data.player.avatarUrl && <button className="ghost" disabled={busy} onClick={() => window.confirm("Remove this player's picture?") && act(() => call(`/admin/players/${id}/avatar`, { method: "DELETE" }), "Picture removed.")}>Remove picture</button>}
+              {data.player.motto && <button className="ghost" disabled={busy} onClick={() => window.confirm("Clear this player's motto?") && act(() => call(`/admin/players/${id}/motto`, { method: "DELETE" }), "Motto cleared.")}>Clear motto</button>}
+            </div>
           </div>
         </div>
         <div className="adm-facts">
+          <div><span>Level</span><b>{data.player.level} · {data.player.xp.toLocaleString()} XP</b></div>
           <div><span>Class</span><b>{data.player.className || "Not chosen"}</b></div>
           <div><span>League</span><b>{data.player.league} · {data.player.points} pts</b></div>
           <div><span>Rating</span><b>{data.player.skillRating}</b></div>
@@ -238,6 +245,7 @@ function PlayerDetail({ id, me, notify, onMatch, onClose }) {
           <div><span>All PvP</span><b>{data.record.pvp.wins}W · {data.record.pvp.losses}L · {data.record.pvp.draws}D</b></div>
           <div><span>PvP win rate</span><b>{pct(data.record.pvp.winRate)}</b></div>
           <div><span>Practice duels</span><b>{data.record.practice}</b></div>
+          <div><span>Win streak</span><b>{data.player.winStreak} (best {data.player.bestWinStreak})</b></div>
           <div><span>Unfinished duels</span><b>{data.record.unfinished}</b></div>
           <div><span>Tutorial</span><b>{data.player.tutorialDone ? "Done" : "Not done"}</b></div>
           <div><span>Story chapter</span><b>{data.player.storyChapter}</b></div>

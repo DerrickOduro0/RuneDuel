@@ -27,6 +27,15 @@ public sealed class Player
     // When the account was made, and when the player last opened the game.
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? LastSeenAtUtc { get; set; }
+    // Experience: every duel adds some and it never goes down. The level comes from it (see Progression).
+    public int Xp { get; set; }
+    // Profile: an uploaded picture (a row in UploadedFiles) and a short line the player writes.
+    public string? AvatarFile { get; set; }
+    public string Motto { get; set; } = "";
+    // PvP wins in a row (ranked and casual), the best run so far, and the best league ever reached (1 is the top).
+    public int WinStreak { get; set; }
+    public int BestWinStreak { get; set; }
+    public int BestLeague { get; set; } = 10;
 }
 
 public sealed class MatchQueueEntry
@@ -141,6 +150,11 @@ public sealed class CombatMatch
     public int RatingDeltaB { get; set; }
     public int CoinsA { get; set; }
     public int CoinsB { get; set; }
+    // XP each player got for this duel, and the level they reached if it levelled them up (0 if not).
+    public int XpA { get; set; }
+    public int XpB { get; set; }
+    public int LevelUpA { get; set; }
+    public int LevelUpB { get; set; }
     public string UsedRunesA { get; set; } = "";
     public string UsedRunesB { get; set; } = "";
     public string LastLog { get; set; } = "The dice are rolled. Read the table, then declare your state.";

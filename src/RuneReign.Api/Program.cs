@@ -108,6 +108,7 @@ using (var seedScope = app.Services.CreateScope())
 app.MapRealmEndpoints();
 app.MapAdminEndpoints(seedRules);
 app.MapFriendEndpoints();
+app.MapProfileEndpoints();
 
 app.MapGet("/api/v1/classes", (GameRules r) => Results.Ok(r.Classes));
 
@@ -407,6 +408,7 @@ app.MapPost("/api/v1/tutorial/complete", async (ClaimsPrincipal user, RuneDbCont
         {
             reward = server.TutorialCoins;
             player.Coins += reward;
+            Progression.Grant(player, Progression.Settings.XpTutorial);
         }
         await db.SaveChangesAsync();
     }
@@ -890,11 +892,17 @@ static RematchState RematchDto(CombatMatch match, bool isA, ServerSettings serve
 static IResult ApiError(string code, string message, int status) => Results.Json(new { error = new { code, message } }, statusCode: status);
 static async Task<Player?> CurrentPlayer(ClaimsPrincipal user, RuneDbContext db) =>
     Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && await db.Players.FindAsync(id) is { Banned: false } player ? player : null;
-static object PlayerDto(Player p, GameRules r) => new { p.Username, p.Email, p.ClassName, p.League, leagueName = r.Leagues.FirstOrDefault(x => x.Number == p.League)?.Name ?? $"League {p.League}", p.Points, pointsPerLeague = r.PointsPerLeague, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems, p.TutorialDone, p.IsAdmin };
+static object PlayerDto(Player p, GameRules r) => new
+{
+    p.Username, p.Email, p.ClassName, p.League, leagueName = r.Leagues.FirstOrDefault(x => x.Number == p.League)?.Name ?? $"League {p.League}",
+    p.Points, pointsPerLeague = r.PointsPerLeague, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems, p.TutorialDone, p.IsAdmin,
+    progress = Progression.Progress(p.Xp), avatarUrl = ProfileEndpoints.AvatarUrl(p), p.Motto
+};
 
 // Records a finished duel once: league points for a win or loss, a match for both players, and new skill ratings.
 static async Task ApplyResult(RuneDbContext db, CombatMatch match, Guid? winnerId, GameRules rules, ServerSettings server)
 {
+    if (!match.ResultsApplied) await ApplyProgress(db, match, winnerId);
     // Practice duels against the Shade are never recorded.
     if (match.ShadeDifficulty is not null) match.ResultsApplied = true;
     // Casual and friend duels: no league points, rating or season matches. Casual pays a few coins; friend duels pay nothing,
@@ -945,10 +953,32 @@ static async Task ApplyResult(RuneDbContext db, CombatMatch match, Guid? winnerI
             match.PointsDeltaB = match.LeagueChangeB * rules.PointsPerLeague + playerB.Points - beforeB.Points;
             match.RatingDeltaA = playerA.SkillRating - beforeA.SkillRating;
             match.RatingDeltaB = playerB.SkillRating - beforeB.SkillRating;
+            playerA.BestLeague = Math.Min(playerA.BestLeague, playerA.League);
+            playerB.BestLeague = Math.Min(playerB.BestLeague, playerB.League);
             match.ResultsApplied = true;
         }
     }
     await db.MatchQueue.Where(x => x.CombatMatchId == match.Id).ExecuteDeleteAsync();
+}
+
+// XP and level-ups for both players, PvP win streaks, and the best league reached. Runs once per duel, before the result is marked applied.
+static async Task ApplyProgress(RuneDbContext db, CombatMatch match, Guid? winnerId)
+{
+    foreach (var isA in new[] { true, false })
+    {
+        var id = isA ? match.PlayerAId : match.PlayerBId;
+        if (id == ShadeOpponent.Id) continue;
+        var player = await db.Players.FindAsync(id);
+        if (player is null) continue;
+        var xp = Progression.DuelXp(match, id, winnerId);
+        var (newLevel, _, _) = Progression.Grant(player, xp);
+        if (isA) { match.XpA = xp; match.LevelUpA = newLevel; } else { match.XpB = xp; match.LevelUpB = newLevel; }
+        if (match.ShadeDifficulty is null && match.Mode != DuelMode.Friend && winnerId is not null)
+        {
+            if (winnerId == id) { player.WinStreak++; player.BestWinStreak = Math.Max(player.BestWinStreak, player.WinStreak); }
+            else player.WinStreak = 0;
+        }
+    }
 }
 
 // A duel the player can continue: both players entered it and it has not finished.
@@ -1060,6 +1090,7 @@ static object HistoryEntry(CombatMatch x, Guid playerId, Dictionary<Guid, string
         leagueChange = isA ? x.LeagueChangeA : x.LeagueChangeB,
         ratingDelta = isA ? x.RatingDeltaA : x.RatingDeltaB,
         coins = isA ? x.CoinsA : x.CoinsB,
+        xp = isA ? x.XpA : x.XpB,
         log = x.LastLog
     };
 }
@@ -1146,7 +1177,18 @@ static void EnsureSqliteSchema(RuneDbContext db)
         ["IsAdmin"] = "INTEGER NOT NULL DEFAULT 0",
         ["Banned"] = "INTEGER NOT NULL DEFAULT 0",
         ["CreatedAtUtc"] = "TEXT NOT NULL DEFAULT '2026-11-01 00:00:00'",
-        ["LastSeenAtUtc"] = "TEXT NULL"
+        ["LastSeenAtUtc"] = "TEXT NULL",
+        ["Xp"] = "INTEGER NOT NULL DEFAULT 0",
+        ["AvatarFile"] = "TEXT NULL",
+        ["Motto"] = "TEXT NOT NULL DEFAULT ''",
+        ["WinStreak"] = "INTEGER NOT NULL DEFAULT 0",
+        ["BestWinStreak"] = "INTEGER NOT NULL DEFAULT 0",
+        ["BestLeague"] = "INTEGER NOT NULL DEFAULT 10"
+    });
+    AddMissingColumns(connection, "CombatMatches", new Dictionary<string, string>
+    {
+        ["XpA"] = "INTEGER NOT NULL DEFAULT 0", ["XpB"] = "INTEGER NOT NULL DEFAULT 0",
+        ["LevelUpA"] = "INTEGER NOT NULL DEFAULT 0", ["LevelUpB"] = "INTEGER NOT NULL DEFAULT 0"
     });
     AddMissingColumns(connection, "FriendChallenges", new Dictionary<string, string> { ["InviteeId"] = "TEXT NULL" });
     AddMissingColumns(connection, "Items", new Dictionary<string, string>
@@ -1339,12 +1381,22 @@ static object CombatDto(CombatMatch match, Guid playerId, string playerName, str
             leagueChange = isA ? match.LeagueChangeA : match.LeagueChangeB,
             ratingDelta = isA ? match.RatingDeltaA : match.RatingDeltaB,
             coins = isA ? match.CoinsA : match.CoinsB,
+            xp = isA ? match.XpA : match.XpB,
+            levelUp = LevelUpDto(isA ? match.LevelUpA : match.LevelUpB, isA ? match.XpA : match.XpB),
             turns = Math.Max(1, match.Turn - 1)
         },
         opponentAway = match.CompletedAtUtc is null && awaySeconds >= server.AwayNoticeSeconds,
         opponentAwaySeconds = awaySeconds,
         claimWinInSeconds = Math.Max(0, server.AwayClaimSeconds - awaySeconds)
     };
+}
+
+// What a level-up paid. Rebuilt from the level reached, so it matches whatever the settings were then as long as they are unchanged.
+static object? LevelUpDto(int newLevel, int xp)
+{
+    if (newLevel <= 0) return null;
+    var s = Progression.Settings;
+    return new { level = newLevel, coins = s.LevelUpCoins, gems = newLevel % s.GemLevelEvery == 0 ? s.LevelUpGems : 0 };
 }
 
 static IReadOnlyCollection<string> ParseRunes(string value)

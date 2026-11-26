@@ -27,6 +27,7 @@ public static class LiveConfig
     {
         Rules = ContentStore.LoadRules(db, seed);
         Server = ContentStore.LoadServerSettings(db);
+        Progression.Load(ContentStore.ReadSettings(db));
         TalismanCatalog.Load(db);
     }
 }
@@ -267,7 +268,7 @@ public static class AdminEndpoints
         Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && await db.Players.FindAsync(id) is { IsAdmin: true, Banned: false } player ? player : null;
 
     // Checks the file's first bytes, not its name, so only real images are stored.
-    private static string ContentTypeFor(string ext) => ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+    internal static string ContentTypeFor(string ext) => ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
 
     // Deletes the picture an item used before, so replaced pictures do not fill the database.
     private static async Task RemoveStoredFile(RuneDbContext db, string? image)
@@ -278,7 +279,7 @@ public static class AdminEndpoints
         if (old is not null) db.UploadedFiles.Remove(old);
     }
 
-    private static string? ImageExtension(byte[] b)
+    internal static string? ImageExtension(byte[] b)
     {
         if (b.Length > 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) return ".png";
         if (b.Length > 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return ".jpg";

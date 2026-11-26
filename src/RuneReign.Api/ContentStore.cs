@@ -74,7 +74,7 @@ public static class ContentStore
             ("WheelSummary", "The Wheel turns on the 1st of each month. The top 3 leagues fall 3 tiers; every other league falls 1.", "Shown on the Ranks screen.")
         };
         var existingKeys = db.GameSettings.Select(x => x.Key).ToHashSet();
-        foreach (var (key, value, description) in settings.Where(x => !existingKeys.Contains(x.Key)))
+        foreach (var (key, value, description) in settings.Concat(Progression.SettingRows).Where(x => !existingKeys.Contains(x.Key)))
             db.GameSettings.Add(new GameSetting { Key = key, Value = value, Description = description });
 
         if (!db.GameClasses.Any())

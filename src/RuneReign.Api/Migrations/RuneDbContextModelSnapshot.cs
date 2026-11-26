@@ -199,6 +199,12 @@ namespace RuneReign.Api.Migrations
                     b.Property<int>("LeagueChangeB")
                         .HasColumnType("integer");
 
+                    b.Property<int>("LevelUpA")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LevelUpB")
+                        .HasColumnType("integer");
+
                     b.Property<int>("ManaA")
                         .HasColumnType("integer");
 
@@ -332,6 +338,12 @@ namespace RuneReign.Api.Migrations
 
                     b.Property<Guid?>("WinnerId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("XpA")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("XpB")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -807,8 +819,17 @@ namespace RuneReign.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AvatarFile")
+                        .HasColumnType("text");
+
                     b.Property<bool>("Banned")
                         .HasColumnType("boolean");
+
+                    b.Property<int>("BestLeague")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("BestWinStreak")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ClassName")
                         .HasColumnType("text");
@@ -834,6 +855,10 @@ namespace RuneReign.Api.Migrations
 
                     b.Property<int>("League")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Motto")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -863,6 +888,12 @@ namespace RuneReign.Api.Migrations
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("WinStreak")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Xp")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
