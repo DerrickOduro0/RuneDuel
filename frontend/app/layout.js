@@ -1,19 +1,21 @@
+import "@fontsource-variable/manrope/wght.css";
+import "@fontsource/cinzel/600.css";
+import "@fontsource/cinzel/700.css";
+import "@fontsource/noto-sans-runic/400.css";
 import "./globals.css";
 import "./parchment.css";
+import "./refine.css";
 
 export const metadata = {
   title: "Rune Duel",
   description: "Climb the ladder. Master your class."
 };
 
+export const viewport = { width: "device-width", initialScale: 1, themeColor: "#0b0e13" };
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+Runic&display=swap" />
-      </head>
       <body>{children}</body>
     </html>
   );

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using RuneReign.Domain;
 
 namespace RuneReign.Api;
 
@@ -9,8 +10,7 @@ public sealed class ForgeRecipe
     public string Key { get; set; } = "";
     public string ResultType { get; set; } = "item";   // item | talisman
     public string ResultKey { get; set; } = "";
-    public int Dust { get; set; }
-    public int Shards { get; set; }
+    public string Ingredients { get; set; } = "";       // "iron-ore:5,bone-shard:3"
     public int Coins { get; set; }
     public int MinLevel { get; set; } = 1;
     public bool Enabled { get; set; } = true;
@@ -18,66 +18,11 @@ public sealed class ForgeRecipe
 }
 
 public sealed record ForgeSalvageRequest(string Type, string Key);
-public sealed record AdminRecipeEdit(string? Key, string? ResultType, string? ResultKey, int? Dust, int? Shards, int? Coins, int? MinLevel, bool? Enabled, int? SortOrder);
+public sealed record AdminRecipeEdit(string? Key, string? ResultType, string? ResultKey, string? Ingredients, int? Coins, int? MinLevel, bool? Enabled, int? SortOrder);
 
-public sealed record ForgeSettings(
-    int DustRankedWin, int DustRankedLoss, int DustCasualWin, int DustCasualLoss, int DustShadeHardWin, int DustShadeEasyWin,
-    int ShardRankedWin, int ShardLevelUp,
-    int SalvageCommonDust, int SalvageRareDust, int SalvageRareShards, int SalvageEpicDust, int SalvageEpicShards);
-
-// The Forge: Rune Dust and Ember Shards drop from duels and from salvaging, and are spent on recipes.
+// The Forge: recipes that turn gathered materials into gear and talismans, and salvage that turns spare gear back into materials.
 public static class Forge
 {
-    public static ForgeSettings Settings { get; private set; } = Defaults;
-    public static ForgeSettings Defaults => new(12, 5, 8, 3, 4, 1, 1, 1, 15, 40, 1, 100, 3);
-
-    public static readonly (string Key, string Value, string Description)[] SettingRows =
-    [
-        ("DustRankedWin", "12", "Rune Dust for winning a ranked duel."),
-        ("DustRankedLoss", "5", "Rune Dust for finishing a ranked duel you lost (a draw gives this too)."),
-        ("DustCasualWin", "8", "Rune Dust for winning a casual duel."),
-        ("DustCasualLoss", "3", "Rune Dust for finishing a casual duel you lost (a draw gives this too)."),
-        ("DustShadeHardWin", "4", "Rune Dust for beating the hard Shade."),
-        ("DustShadeEasyWin", "1", "Rune Dust for beating the easy Shade."),
-        ("ShardRankedWin", "1", "Ember Shards for winning a ranked duel."),
-        ("ShardLevelUp", "1", "Ember Shards for every level gained."),
-        ("SalvageCommonDust", "15", "Rune Dust from salvaging a common item or talisman."),
-        ("SalvageRareDust", "40", "Rune Dust from salvaging a rare item or talisman."),
-        ("SalvageRareShards", "1", "Ember Shards from salvaging a rare item or talisman."),
-        ("SalvageEpicDust", "100", "Rune Dust from salvaging an epic item or talisman."),
-        ("SalvageEpicShards", "3", "Ember Shards from salvaging an epic item or talisman.")
-    ];
-
-    public static void Load(Dictionary<string, string> s)
-    {
-        var d = Defaults;
-        int G(string key, int fallback) => s.TryGetValue(key, out var raw) && int.TryParse(raw, out var v) ? Math.Max(0, v) : fallback;
-        Settings = new ForgeSettings(
-            G("DustRankedWin", d.DustRankedWin), G("DustRankedLoss", d.DustRankedLoss), G("DustCasualWin", d.DustCasualWin), G("DustCasualLoss", d.DustCasualLoss),
-            G("DustShadeHardWin", d.DustShadeHardWin), G("DustShadeEasyWin", d.DustShadeEasyWin), G("ShardRankedWin", d.ShardRankedWin), G("ShardLevelUp", d.ShardLevelUp),
-            G("SalvageCommonDust", d.SalvageCommonDust), G("SalvageRareDust", d.SalvageRareDust), G("SalvageRareShards", d.SalvageRareShards),
-            G("SalvageEpicDust", d.SalvageEpicDust), G("SalvageEpicShards", d.SalvageEpicShards));
-    }
-
-    // Materials one player gets for a finished duel. Friend duels give none, so two accounts cannot farm each other.
-    public static (int Dust, int Shards) DuelDrops(CombatMatch match, Guid playerId, Guid? winnerId)
-    {
-        var s = Settings;
-        var won = winnerId == playerId;
-        if (match.ShadeDifficulty is not null)
-            return !won ? (0, 0) : match.ShadeDifficulty == "hard" ? (s.DustShadeHardWin, 0) : match.ShadeDifficulty == "easy" ? (s.DustShadeEasyWin, 0) : (0, 0);
-        if (match.Mode == DuelMode.Friend) return (0, 0);
-        if (match.Mode == DuelMode.Casual) return (won ? s.DustCasualWin : s.DustCasualLoss, 0);
-        return won ? (s.DustRankedWin, s.ShardRankedWin) : (s.DustRankedLoss, 0);
-    }
-
-    public static (int Dust, int Shards) SalvageValue(string rarity) => rarity switch
-    {
-        "epic" => (Settings.SalvageEpicDust, Settings.SalvageEpicShards),
-        "rare" => (Settings.SalvageRareDust, Settings.SalvageRareShards),
-        _ => (Settings.SalvageCommonDust, 0)
-    };
-
     // Forge-only gear: never sold in the shop. Same attribute budget as shop gear of the same rarity, so crafting is a path, not an edge.
     private static readonly ItemDefinition[] ForgedItems =
     [
@@ -90,10 +35,10 @@ public static class Forge
         new() { Key = "forgefire-frame", Name = "Forgefire frame", Kind = "frame", Icon = "◆", Description = "A molten frame for your rune dice. Cosmetic.", Rarity = "epic", SortOrder = 66 }
     ];
 
-    private static readonly (string Item, int Dust, int Shards, int Level)[] ItemRecipes =
+    private static readonly (string Item, int Level)[] ItemRecipes =
     [
-        ("emberforged-helm", 120, 2, 3), ("slagglass-charm", 130, 2, 4), ("smoulder-ring", 150, 3, 5),
-        ("anvilscale-coat", 300, 6, 8), ("hearthstone-sigil", 320, 7, 10), ("cinderweave-mantle", 360, 8, 12), ("forgefire-frame", 400, 10, 15)
+        ("emberforged-helm", 3), ("slagglass-charm", 4), ("smoulder-ring", 5),
+        ("anvilscale-coat", 8), ("hearthstone-sigil", 10), ("cinderweave-mantle", 12), ("forgefire-frame", 15)
     ];
 
     // Adds the forge items if missing, and the starting recipes once. Recipes an admin removes later stay removed.
@@ -104,10 +49,10 @@ public static class Forge
         if (!db.GameSettings.Any(x => x.Key == "ForgeSeeded"))
         {
             var order = 0;
-            foreach (var (item, dust, shards, level) in ItemRecipes)
-                db.ForgeRecipes.Add(new ForgeRecipe { Key = item, ResultType = "item", ResultKey = item, Dust = dust, Shards = shards, MinLevel = level, SortOrder = order++ });
+            foreach (var (item, level) in ItemRecipes)
+                db.ForgeRecipes.Add(new ForgeRecipe { Key = item, ResultType = "item", ResultKey = item, Ingredients = Materials.ItemIngredients[item], MinLevel = level, SortOrder = order++ });
             foreach (var t in db.Talismans.OrderBy(x => x.SortOrder).ToList())
-                db.ForgeRecipes.Add(new ForgeRecipe { Key = $"talisman-{t.Key}", ResultType = "talisman", ResultKey = t.Key, Dust = Math.Max(60, t.PriceCoins / 4), Shards = 1, MinLevel = 2, SortOrder = 100 + order++ });
+                db.ForgeRecipes.Add(new ForgeRecipe { Key = $"talisman-{t.Key}", ResultType = "talisman", ResultKey = t.Key, Ingredients = Materials.TalismanIngredients(t.Rarity), MinLevel = 2, SortOrder = 100 + order++ });
             db.GameSettings.Add(new GameSetting { Key = "ForgeSeeded", Value = "1", Description = "The Forge's starting recipes were added. Leave as 1." });
         }
         db.SaveChanges();
@@ -144,10 +89,9 @@ public static class Forge
                 if (!await db.Talismans.AnyAsync(x => x.Key == recipe.ResultKey && x.Enabled)) return Error("no_item", "That talisman is not available.", 404);
                 if (await db.PlayerTalismans.AnyAsync(x => x.PlayerId == me.Id && x.TalismanKey == recipe.ResultKey)) return Error("owned", "You already own this.", 409);
             }
-            if (me.Dust < recipe.Dust || me.Shards < recipe.Shards || me.Coins < recipe.Coins)
+            if (me.Coins < recipe.Coins) return Error("coins", "You do not have enough coins.", 400);
+            if (!await Materials.Take(db, me.Id, Materials.Parse(recipe.Ingredients)))
                 return Error("materials", "You do not have enough materials yet.", 400);
-            me.Dust -= recipe.Dust;
-            me.Shards -= recipe.Shards;
             me.Coins -= recipe.Coins;
             if (recipe.ResultType == "item") db.PlayerItems.Add(new PlayerItem { Id = Guid.NewGuid(), PlayerId = me.Id, ItemKey = recipe.ResultKey, AcquiredAtUtc = DateTime.UtcNow });
             else db.PlayerTalismans.Add(new PlayerTalisman { Id = Guid.NewGuid(), PlayerId = me.Id, TalismanKey = recipe.ResultKey, AcquiredAtUtc = DateTime.UtcNow });
@@ -160,6 +104,7 @@ public static class Forge
             var me = await CurrentPlayer(user, db);
             if (me is null) return NotFound();
             string rarity;
+            var isTalisman = body.Type == "talisman";
             if (body.Type == "item")
             {
                 var owned = await db.PlayerItems.FirstOrDefaultAsync(x => x.PlayerId == me.Id && x.ItemKey == body.Key);
@@ -180,12 +125,11 @@ public static class Forge
                 rarity = talisman.Rarity;
             }
             else return Error("bad_type", "Choose an item or a talisman.", 400);
-            var (dust, shards) = SalvageValue(rarity);
-            me.Dust += dust;
-            me.Shards += shards;
+            var yield = Materials.SalvageYield(rarity, isTalisman);
+            await Materials.Give(db, me.Id, yield);
             await db.SaveChangesAsync();
             var view = await View(db, me);
-            return Results.Ok(new { gained = new { dust, shards }, forge = view });
+            return Results.Ok(new { gained = await Materials.Describe(db, yield), forge = view });
         });
     }
 
@@ -198,13 +142,16 @@ public static class Forge
         var talismans = await db.Talismans.AsNoTracking().ToDictionaryAsync(x => x.Key);
         var ownedItems = await db.PlayerItems.AsNoTracking().Where(x => x.PlayerId == me.Id).ToListAsync();
         var ownedTalismans = await db.PlayerTalismans.AsNoTracking().Where(x => x.PlayerId == me.Id).ToListAsync();
+        var materials = await db.Materials.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync();
+        var names = materials.ToDictionary(x => x.Key);
+        var bag = await Materials.Bag(db, me.Id);
 
         object? Result(ForgeRecipe r)
         {
             if (r.ResultType == "item" && items.TryGetValue(r.ResultKey, out var i))
                 return new { type = "item", i.Key, i.Name, i.Kind, i.Icon, i.Description, i.Rarity, imageUrl = Equipment.ImageUrl(i), stats = Equipment.StatsObject(Equipment.Stats(i)) };
             if (r.ResultType == "talisman" && talismans.TryGetValue(r.ResultKey, out var t) && t.Enabled)
-                return new { type = "talisman", t.Key, t.Name, t.Icon, description = t.Effect, cost = t.Drawback, t.Rarity };
+                return new { type = "talisman", t.Key, t.Name, t.Icon, description = t.Effect, cost = t.Drawback, t.Rarity, active = Talismans.IsActive(t.Key), charges = Talismans.Charges(t.Key) };
             return null;
         }
 
@@ -212,35 +159,31 @@ public static class Forge
         {
             var r = x.r;
             var owned = r.ResultType == "item" ? ownedItems.Any(o => o.ItemKey == r.ResultKey) : ownedTalismans.Any(o => o.TalismanKey == r.ResultKey);
+            var need = Materials.Parse(r.Ingredients);
+            var ingredients = need.Select(n => new
+            {
+                key = n.Key, need = n.Count, have = bag.GetValueOrDefault(n.Key),
+                name = names.GetValueOrDefault(n.Key)?.Name ?? n.Key, icon = names.GetValueOrDefault(n.Key)?.Icon ?? "◆", rarity = names.GetValueOrDefault(n.Key)?.Rarity ?? "common"
+            }).ToList();
             var missing = new List<string>();
             if (level < r.MinLevel) missing.Add($"Level {r.MinLevel}");
-            if (me.Dust < r.Dust) missing.Add($"{r.Dust - me.Dust} more Rune Dust");
-            if (me.Shards < r.Shards) missing.Add($"{r.Shards - me.Shards} more Ember Shards");
+            foreach (var n in ingredients.Where(n => n.have < n.need)) missing.Add($"{n.need - n.have} more {n.name}");
             if (me.Coins < r.Coins) missing.Add($"{r.Coins - me.Coins} more coins");
-            return new { key = r.Key, result = x.result, cost = new { dust = r.Dust, shards = r.Shards, coins = r.Coins }, minLevel = r.MinLevel, owned, canCraft = !owned && missing.Count == 0, missing };
+            return new { key = r.Key, result = x.result, ingredients, coins = r.Coins, minLevel = r.MinLevel, owned, canCraft = !owned && missing.Count == 0, missing };
         }).ToList();
 
         var salvageItems = ownedItems.Where(o => !o.Equipped && items.TryGetValue(o.ItemKey, out var i) && !i.IsStarter)
-            .Select(o => { var i = items[o.ItemKey]; var v = SalvageValue(i.Rarity); return new { type = "item", key = i.Key, name = i.Name, icon = i.Icon, rarity = i.Rarity, kind = i.Kind, imageUrl = Equipment.ImageUrl(i), dust = v.Dust, shards = v.Shards }; });
+            .Select(o => { var i = items[o.ItemKey]; return new { type = "item", key = i.Key, name = i.Name, icon = i.Icon, rarity = i.Rarity, kind = i.Kind, imageUrl = Equipment.ImageUrl(i), description = i.Description, gives = Materials.SalvageYield(i.Rarity, false).Select(y => new { key = y.Key, count = y.Count, name = names.GetValueOrDefault(y.Key)?.Name ?? y.Key, icon = names.GetValueOrDefault(y.Key)?.Icon ?? "◆" }) }; });
         var salvageTalismans = ownedTalismans.Where(o => !o.Equipped && talismans.ContainsKey(o.TalismanKey))
-            .Select(o => { var t = talismans[o.TalismanKey]; var v = SalvageValue(t.Rarity); return new { type = "talisman", key = t.Key, name = t.Name, icon = t.Icon, rarity = t.Rarity, kind = "talisman", imageUrl = (string?)null, dust = v.Dust, shards = v.Shards }; });
+            .Select(o => { var t = talismans[o.TalismanKey]; return new { type = "talisman", key = t.Key, name = t.Name, icon = t.Icon, rarity = t.Rarity, kind = "talisman", imageUrl = (string?)null, description = t.Effect, gives = Materials.SalvageYield(t.Rarity, true).Select(y => new { key = y.Key, count = y.Count, name = names.GetValueOrDefault(y.Key)?.Name ?? y.Key, icon = names.GetValueOrDefault(y.Key)?.Icon ?? "◆" }) }; });
 
-        var s = Settings;
         return new
         {
-            materials = new { dust = me.Dust, shards = me.Shards, coins = me.Coins },
+            coins = me.Coins,
             level,
+            materials = materials.Select(m => Materials.Dto(m, bag.GetValueOrDefault(m.Key))),
             recipes = list,
-            salvage = salvageItems.Concat(salvageTalismans).ToList(),
-            sources = new
-            {
-                rankedWin = new { dust = s.DustRankedWin, shards = s.ShardRankedWin },
-                rankedLoss = new { dust = s.DustRankedLoss },
-                casualWin = new { dust = s.DustCasualWin },
-                casualLoss = new { dust = s.DustCasualLoss },
-                shadeHardWin = new { dust = s.DustShadeHardWin },
-                levelUp = new { shards = s.ShardLevelUp }
-            }
+            salvage = salvageItems.Cast<object>().Concat(salvageTalismans).ToList()
         };
     }
 
@@ -258,7 +201,7 @@ public static class Forge
             var key = string.IsNullOrWhiteSpace(edit.Key) ? (type == "item" ? resultKey : $"talisman-{resultKey}") : edit.Key.Trim().ToLowerInvariant();
             if (await db.ForgeRecipes.AnyAsync(x => x.Key == key)) return Error("exists", "There is already a recipe for that.", 409);
             var recipe = new ForgeRecipe { Key = key, ResultType = type, ResultKey = resultKey, SortOrder = await db.ForgeRecipes.CountAsync() };
-            var problem = Apply(recipe, edit);
+            var problem = Apply(recipe, edit, (await db.Materials.Select(x => x.Key).ToListAsync()).ToHashSet());
             if (problem is not null) return Error("invalid", problem, 400);
             db.ForgeRecipes.Add(recipe);
             await db.SaveChangesAsync();
@@ -269,7 +212,7 @@ public static class Forge
         {
             var recipe = await db.ForgeRecipes.FindAsync(key);
             if (recipe is null) return Error("not_found", "Recipe not found.", 404);
-            var problem = Apply(recipe, edit);
+            var problem = Apply(recipe, edit, (await db.Materials.Select(x => x.Key).ToListAsync()).ToHashSet());
             if (problem is not null) return Error("invalid", problem, 400);
             await db.SaveChangesAsync();
             return Results.Ok(await AdminList(db));
@@ -282,12 +225,18 @@ public static class Forge
         });
     }
 
-    private static string? Apply(ForgeRecipe r, AdminRecipeEdit e)
+    private static string? Apply(ForgeRecipe r, AdminRecipeEdit e, HashSet<string> known)
     {
-        if (e.Dust is < 0 || e.Shards is < 0 || e.Coins is < 0) return "Costs cannot be negative.";
+        if (e.Coins is < 0) return "Coins cannot be negative.";
         if (e.MinLevel is < 1 or > Progression.MaxLevel) return $"Level must be between 1 and {Progression.MaxLevel}.";
-        if (e.Dust is not null) r.Dust = e.Dust.Value;
-        if (e.Shards is not null) r.Shards = e.Shards.Value;
+        if (e.Ingredients is not null)
+        {
+            var parsed = Materials.Parse(e.Ingredients);
+            if (parsed.Count == 0) return "Give at least one ingredient, like iron-ore:5.";
+            var unknown = parsed.Where(x => !known.Contains(x.Key)).Select(x => x.Key).ToList();
+            if (unknown.Count > 0) return $"Unknown material: {string.Join(", ", unknown)}.";
+            r.Ingredients = Materials.Format(parsed);
+        }
         if (e.Coins is not null) r.Coins = e.Coins.Value;
         if (e.MinLevel is not null) r.MinLevel = e.MinLevel.Value;
         if (e.Enabled is not null) r.Enabled = e.Enabled.Value;
@@ -302,7 +251,7 @@ public static class Forge
         var crafted = await db.PlayerItems.AsNoTracking().GroupBy(x => x.ItemKey).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
         var recipes = (await db.ForgeRecipes.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync()).Select(r => new
         {
-            r.Key, r.ResultType, r.ResultKey, r.Dust, r.Shards, r.Coins, r.MinLevel, r.Enabled, r.SortOrder,
+            r.Key, r.ResultType, r.ResultKey, r.Ingredients, r.Coins, r.MinLevel, r.Enabled, r.SortOrder,
             name = r.ResultType == "item" ? items.GetValueOrDefault(r.ResultKey)?.Name : talismans.GetValueOrDefault(r.ResultKey)?.Name,
             rarity = r.ResultType == "item" ? items.GetValueOrDefault(r.ResultKey)?.Rarity : talismans.GetValueOrDefault(r.ResultKey)?.Rarity,
             inShop = r.ResultType == "item" ? items.GetValueOrDefault(r.ResultKey)?.InShop : null,
@@ -313,7 +262,8 @@ public static class Forge
             recipes,
             items = items.Values.OrderBy(x => x.SortOrder).Select(x => new { x.Key, x.Name, x.Kind, x.Rarity, x.InShop }),
             talismans = talismans.Values.OrderBy(x => x.SortOrder).Select(x => new { x.Key, x.Name, x.Rarity }),
-            materialsHeld = new { dust = await db.Players.SumAsync(x => (long)x.Dust), shards = await db.Players.SumAsync(x => (long)x.Shards) }
+            materials = (await db.Materials.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync()).Select(m => new { m.Key, m.Name, m.Icon, m.Rarity, m.Sources, m.Hint, m.Description }),
+            materialsHeld = await db.PlayerMaterials.AsNoTracking().GroupBy(x => x.MaterialKey).Select(g => new { key = g.Key, count = g.Sum(x => x.Count) }).ToListAsync()
         };
     }
 

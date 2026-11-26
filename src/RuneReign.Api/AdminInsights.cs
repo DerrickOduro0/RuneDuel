@@ -161,6 +161,8 @@ public static class AdminInsights
                 },
                 items = items.Select(x => new { key = x.ItemKey, name = itemNames.GetValueOrDefault(x.ItemKey, x.ItemKey), x.Equipped, x.AcquiredAtUtc }),
                 talismans = talismans.Select(x => new { key = x.TalismanKey, name = talismanNames.GetValueOrDefault(x.TalismanKey, x.TalismanKey), x.Equipped, x.AcquiredAtUtc }),
+                materials = (await db.Materials.AsNoTracking().OrderBy(x => x.SortOrder).ToListAsync()).Select(m => new { m.Key, m.Name, m.Icon, m.Rarity, count = 0 })
+                    .GroupJoin(db.PlayerMaterials.AsNoTracking().Where(x => x.PlayerId == id).ToList(), m => m.Key, pm => pm.MaterialKey, (m, pm) => new { m.Key, m.Name, m.Icon, m.Rarity, count = pm.Sum(x => x.Count) }),
                 matches = await MatchRows(db, mine.OrderByDescending(x => x.CreatedAtUtc).Take(20)),
                 unreadLetters = await db.PlayerMessages.CountAsync(x => x.PlayerId == id && x.ReadAtUtc == null)
             });
@@ -299,7 +301,7 @@ public static class AdminInsights
     {
         p.Id, p.Username, p.Email, p.ClassName, p.League, p.Points, p.SkillRating, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems,
         p.IsAdmin, p.Banned, p.TutorialDone, p.StoryChapter, p.CreatedAtUtc, p.LastSeenAtUtc,
-        p.Xp, level = Progression.LevelFor(p.Xp), avatarUrl = ProfileEndpoints.AvatarUrl(p), p.Motto, p.WinStreak, p.BestWinStreak, p.BestLeague, p.Dust, p.Shards
+        p.Xp, level = Progression.LevelFor(p.Xp), avatarUrl = ProfileEndpoints.AvatarUrl(p), p.Motto, p.WinStreak, p.BestWinStreak, p.BestLeague
     };
 
     private static async Task<List<object>> MatchRows(RuneDbContext db, IQueryable<CombatMatch> query)

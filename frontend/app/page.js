@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const screens = {
   auth: "auth",
@@ -862,7 +862,7 @@ function Auth({ onSubmit, loading }) {
 }
 
 function ClassSelection({ classes, loading, onChoose }) {
-  return <section className="panel class-panel"><div className="eyebrow">INITIATION RITE</div><h2>Choose your class</h2><p className="step-help">Your path begins here. Choose the magic that will define your legend.</p><p className="muted">This choice is permanent for the season.</p>{classes.length === 0 ? <p>Loading classes…</p> : <div className="cards">{classes.map((item) => <article className={`card class-card ${item.name.toLowerCase()}`} key={item.name}><div className="class-glyph">{item.name.slice(0, 1)}</div><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p><strong>Core rule</strong><br />{item.coreRule}</p><ul>{item.runes.map((rune) => <li key={rune.name}><strong className="rune-symbol">{rune.symbol}</strong> <span>{rune.name} — {rune.meaning}</span></li>)}</ul><button disabled={loading} onClick={() => onChoose(item.name)}>{loading ? "Saving…" : `Choose ${item.name}`}</button></article>)}</div>}</section>;
+  return <section className="panel class-panel"><div className="eyebrow">INITIATION RITE</div><h2>Choose your class</h2><p className="step-help">Your path begins here. Choose the magic that will define your legend.</p><p className="muted">This choice is permanent for the season.</p>{classes.length === 0 ? <p>Loading classes…</p> : <div className="cards">{classes.map((item) => <article className={`card class-card ${item.name.toLowerCase()}`} key={item.name}><div className="class-glyph">{item.runes?.[0]?.symbol || item.name.slice(0, 1)}</div><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p><strong>Core rule</strong><br />{item.coreRule}</p><ul>{item.runes.map((rune) => <li key={rune.name}><strong className="rune-symbol">{rune.symbol}</strong> <span>{rune.name} — {rune.meaning}</span></li>)}</ul><button disabled={loading} onClick={() => onChoose(item.name)}>{loading ? "Saving…" : `Choose ${item.name}`}</button></article>)}</div>}</section>;
 }
 
 function StatChips({ stats, attributes, compact = false }) {
@@ -916,22 +916,7 @@ function RealmPage({ page, content, profile, classes, league, realm, busy, notic
     {loading && <p className="muted">Loading from the realm…</p>}
     {page === "characters" && <p className="muted page-note">The four paths of rune magic. Your class is set when you create your mage.</p>}
     {page === "characters" && <div className="cards">{classes.map((item) => <article className="card" key={item.name}><div className="class-glyph">{item.runes?.[0]?.symbol || item.name.slice(0, 1)}</div><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p>{item.coreRule}</p><p className="rune-row">{item.runes?.map((rune) => <span key={rune.name} title={`${rune.name} — ${rune.meaning}`}>{rune.symbol}</span>)}</p><span className="muted">{item.name === profile.className ? "YOUR ACTIVE CLASS" : "AVAILABLE LORE"}</span></article>)}</div>}
-    {realm && page === "shop" && realm.talismans?.length > 0 && <section className="shop-section">
-      <div className="shop-section-head"><h3>Talismans</h3><p className="muted">Each bends one rule of the duel. Wear one at a time; your opponent can see it.</p></div>
-      <div className="cards talisman-cards">{realm.talismans.map((t) => {
-        const short = realm.wallet.coins < t.priceCoins;
-        return <TalismanCard key={t.key} talisman={t}>
-          <p className="item-price">{t.priceCoins.toLocaleString()} coins</p>
-          <button disabled={busy || t.owned || short} className={t.owned ? "secondary" : ""} onClick={() => onAction(`/realm/talismans/${t.key}/buy`)}>{t.owned ? (t.equipped ? "Equipped" : "Owned") : short ? "Not enough" : "Purchase"}</button>
-        </TalismanCard>;
-      })}</div>
-    </section>}
-    {realm && page === "shop" && <div className="shop-section-head"><h3>Gear</h3></div>}
-    {realm && page === "shop" && <div className="cards">{realm.shop.map((item) => {
-      const price = item.priceGems > 0 ? `${item.priceGems} gems` : `${item.priceCoins.toLocaleString()} coins`;
-      const short = item.priceGems > 0 ? realm.wallet.gems < item.priceGems : realm.wallet.coins < item.priceCoins;
-      return <article className={`card shop-card rarity-${item.rarity || "common"}`} key={item.key}><ItemArt item={item} className="mode-card-icon shop-item-art" /><h3>{item.name}</h3><p className="item-kind">{slotName[item.kind] || item.kind} · <b className={`rarity-label rarity-${item.rarity || "common"}`}>{item.rarity || "common"}</b></p><StatChips stats={item.stats} attributes={attributes} /><p className="muted">{item.description}</p><p className="item-price">{price}</p><button disabled={busy || item.owned || short} className={item.owned ? "secondary" : ""} onClick={() => onAction(`/realm/shop/${item.key}/buy`)}>{item.owned ? "Owned" : short ? "Not enough" : "Purchase"}</button></article>;
-    })}</div>}
+    {realm && page === "shop" && <ShopPanel realm={realm} busy={busy} attributes={attributes} slotName={slotName} onAction={onAction} />}
     {realm && page === "quests" && objectiveCards("quest")}
     {realm && page === "missions" && objectiveCards("mission")}
     {realm && page === "rewards" && objectiveCards("reward")}
@@ -943,6 +928,56 @@ function RealmPage({ page, content, profile, classes, league, realm, busy, notic
     </section>
     <WorldBottomNav active={page} onHome={onBack} onNavigate={onNavigate} />
   </section>;
+}
+
+/* ---------- Shop: gear and talismans as slot grids, details beside ---------- */
+const SHOP_COLUMNS = 7;
+function ShopPanel({ realm, busy, attributes, slotName, onAction }) {
+  const [tab, setTab] = useState("gear");
+  const [selectedKey, setSelectedKey] = useState(null);
+  const [tipBind, tipLayer] = useItemTip();
+  const wallet = realm.wallet;
+  const gear = realm.shop || [];
+  const talismans = realm.talismans || [];
+  const priceOf = (item) => item.priceGems > 0 ? { text: `${item.priceGems}`, gems: true, short: wallet.gems < item.priceGems } : { text: item.priceCoins >= 1000 ? `${(item.priceCoins / 1000).toFixed(item.priceCoins % 1000 ? 1 : 0)}k` : `${item.priceCoins}`, gems: false, short: wallet.coins < item.priceCoins };
+  const fullPrice = (item) => item.priceGems > 0 ? `${item.priceGems} gems` : `${(item.priceCoins ?? 0).toLocaleString()} coins`;
+  const list = tab === "gear" ? gear : talismans;
+  const selected = list.find((entry) => entry.key === selectedKey) || null;
+  const buyPath = (entry) => tab === "gear" ? `/realm/shop/${entry.key}/buy` : `/realm/talismans/${entry.key}/buy`;
+  const cardFor = (entry, withActions) => {
+    const price = priceOf(entry);
+    const actions = withActions && <div className="item-card-actions">
+      <span className={`item-card-price ${price.short && !entry.owned ? "is-short" : ""}`}><Ico name={price.gems ? "gem" : "coin"} size={16} /> {fullPrice(entry)}</span>
+      <button disabled={busy || entry.owned || price.short} className={entry.owned ? "secondary" : ""} onClick={() => onAction(buyPath(entry))}>{entry.owned ? (entry.equipped ? "Equipped" : "Owned") : price.short ? "Not enough" : "Buy"}</button>
+    </div>;
+    return tab === "gear"
+      ? <ItemCard art={itemArt(entry)} name={entry.name} rarity={entry.rarity} typeLine={slotName[entry.kind] || entry.kind} stats={entry.stats} attributes={attributes} description={entry.description} hint={withActions ? null : `${fullPrice(entry)}${entry.owned ? " · owned" : ""}`}>{actions}</ItemCard>
+      : <ItemCard art={talismanArt(entry)} name={entry.name} rarity={entry.rarity || "rare"} typeLine={`Talisman · ${entry.active ? "use in duel" : "triggers itself"}${entry.charges ? ` · ${entry.charges}× per duel` : ""}`} description={entry.effect} hint={withActions ? null : `${fullPrice(entry)}${entry.owned ? " · owned" : ""}`}>
+          {entry.drawback ? <p className="item-card-cost"><b>Cost:</b> {entry.drawback}</p> : <p className="item-card-desc">No drawback.</p>}{actions}
+        </ItemCard>;
+  };
+  return <div className="inv-layout shop-layout">
+    <section className="inv-panel" aria-label="Shop stock">
+      <header className="inv-panel-head">
+        <div className="inv-tabs" role="tablist">
+          <button role="tab" aria-selected={tab === "gear"} className={tab === "gear" ? "is-on" : ""} onClick={() => { setTab("gear"); setSelectedKey(null); }}>Gear</button>
+          <button role="tab" aria-selected={tab === "talismans"} className={tab === "talismans" ? "is-on" : ""} onClick={() => { setTab("talismans"); setSelectedKey(null); }}>Talismans</button>
+        </div>
+        <span className="inv-count">{list.filter((entry) => entry.owned).length} / {list.length} owned</span>
+      </header>
+      <div className="inv-grid" style={{ "--cols": SHOP_COLUMNS }}>
+        {list.map((entry) => { const price = priceOf(entry); return <SlotTile key={entry.key} art={tab === "gear" ? itemArt(entry) : talismanArt(entry)} rarity={entry.rarity || (tab === "gear" ? "common" : "rare")}
+          owned={entry.owned} equipped={entry.equipped} selected={selectedKey === entry.key} label={entry.name}
+          badge={entry.owned ? null : <span className={price.short ? "is-short" : ""}><Ico name={price.gems ? "gem" : "coin"} size={10} />{price.text}</span>}
+          tip={tipBind(cardFor(entry, false))} onClick={() => setSelectedKey(entry.key)} />; })}
+        {Array.from({ length: emptyCells(list.length, SHOP_COLUMNS, 21) }).map((_, index) => <span key={`e${index}`} className="slot-tile is-blank" aria-hidden="true" />)}
+      </div>
+    </section>
+    <aside className="inv-panel inv-detail" aria-label="Selected item">
+      {selected ? cardFor(selected, true) : <p className="muted inv-note">Hover over an item to read it, click it to buy. {tab === "talismans" ? "Talismans bend one rule of the duel; wear one at a time." : "Gear adds attribute bonuses while worn."}</p>}
+    </aside>
+    {tipLayer}
+  </div>;
 }
 
 function seenText(friend) {
@@ -1078,13 +1113,38 @@ function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnsw
 }
 
 // The Forge: craft gear and talismans from Rune Dust and Ember Shards, or salvage what you do not use.
+const SOURCE_LABEL = { duel: "Duels", exploration: "Exploration", dungeon: "Dungeons" };
+const FORGE_COLUMNS = 7;
+const materialArt = (m) => <span className="tile-art mat-art">{m.icon}</span>;
+
+function MaterialCard({ material, hint }) {
+  return <ItemCard art={materialArt(material)} name={material.name} rarity={material.rarity} typeLine="Material" description={material.description} hint={hint}>
+    <p className="item-card-desc"><b className="item-card-label">You have</b> {material.count ?? 0}</p>
+    {material.sources?.length > 0 && <div className="mat-sources">{material.sources.map((s) => <span key={s.key} className={s.live ? "is-live" : ""}>{SOURCE_LABEL[s.key] || s.key}{s.live ? "" : " · soon"}</span>)}</div>}
+    {material.hint && <p className="item-card-desc">{material.hint}</p>}
+  </ItemCard>;
+}
+
+// One ingredient line: the material, how many you have and how many it needs.
+function IngredientRow({ ing, materials, tipBind }) {
+  const m = materials.find((x) => x.key === ing.key) || { ...ing, count: ing.have };
+  const ok = ing.have >= ing.need;
+  return <li className={`ing-row ${ok ? "is-ok" : "is-short"}`} {...(tipBind ? tipBind(<MaterialCard material={m} />) : {})}>
+    <span className={`ing-icon rarity-${ing.rarity}`}>{ing.icon}</span>
+    <span className="ing-name">{ing.name}</span>
+    <span className="ing-count"><b>{ing.have}</b>/{ing.need}</span>
+  </li>;
+}
+
 function ForgePanel({ token, attributes, slotName, onChanged }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("recipes");
+  const [tab, setTab] = useState("craft");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [filter, setFilter] = useState("all");
+  const [selectedKey, setSelectedKey] = useState(null);
+  const [tipBind, tipLayer] = useItemTip();
   const load = useCallback(async () => {
     try { setData(await request("/forge", {}, token)); setError(""); } catch (value) { setError(value.message); }
   }, [token]);
@@ -1094,18 +1154,18 @@ function ForgePanel({ token, attributes, slotName, onChanged }) {
     setBusy(true); setNote("");
     try {
       setData(await request(`/forge/craft/${recipe.key}`, { method: "POST" }, token));
-      setNote(`Forged ${recipe.result.name}! ${recipe.result.type === "talisman" ? "Equip it on the Character screen." : "Wear it from the Character screen."}`);
+      setNote(`Forged ${recipe.result.name}! Find it on the Character screen.`);
       onChanged?.();
     } catch (value) { setNote(value.message); }
     setBusy(false);
   }
   async function salvage(entry) {
-    const value = [entry.dust ? `${entry.dust} Rune Dust` : null, entry.shards ? `${entry.shards} Ember Shard${entry.shards > 1 ? "s" : ""}` : null].filter(Boolean).join(" and ");
+    const value = entry.gives.map((g) => `${g.count} ${g.name}`).join(", ");
     if (!window.confirm(`Salvage ${entry.name} for ${value}? It will be gone from your collection.`)) return;
     setBusy(true); setNote("");
     try {
       const result = await request("/forge/salvage", { method: "POST", body: JSON.stringify({ type: entry.type, key: entry.key }) }, token);
-      setData(result.forge);
+      setData(result.forge); setSelectedKey(null);
       setNote(`Salvaged ${entry.name}: +${value}.`);
       onChanged?.();
     } catch (failure) { setNote(failure.message); }
@@ -1114,54 +1174,88 @@ function ForgePanel({ token, attributes, slotName, onChanged }) {
 
   if (error) return <p className="error">{error}</p>;
   if (!data) return <p className="muted">Heating the Forge…</p>;
-  const m = data.materials;
+  const materials = data.materials || [];
   const recipes = data.recipes.filter((r) => filter === "all" || (filter === "talisman" ? r.result.type === "talisman" : r.result.type === "item"));
-  const art = (result) => ({ key: result.key, icon: result.icon, image: result.imageUrl || "" });
+  const resultArt = (r) => r.type === "item" ? itemArt({ key: r.key, icon: r.icon, image: r.imageUrl || "" }) : talismanArt(r);
+  const typeLine = (r) => r.type === "item" ? (slotName[r.kind] || r.kind) : "Talisman";
+  const switchTab = (next) => { setTab(next); setSelectedKey(null); };
 
-  return <div className="forge">
-    <div className="forge-materials">
-      <div className="forge-mat is-dust"><span className="forge-mat-icon" aria-hidden="true">✦</span><div><b>{m.dust.toLocaleString()}</b><small>Rune Dust</small></div></div>
-      <div className="forge-mat is-shard"><span className="forge-mat-icon" aria-hidden="true">◆</span><div><b>{m.shards.toLocaleString()}</b><small>Ember Shards</small></div></div>
-      <p className="forge-sources">Ranked win: +{data.sources.rankedWin.dust} Dust, +{data.sources.rankedWin.shards} Shard · Ranked loss: +{data.sources.rankedLoss.dust} · Casual win: +{data.sources.casualWin.dust} · Hard Shade win: +{data.sources.shadeHardWin.dust} · Each level up: +{data.sources.levelUp.shards} Shard · Friend duels give none.</p>
-    </div>
+  const recipeCard = (recipe, withActions) => {
+    const r = recipe.result;
+    const locked = data.level < recipe.minLevel;
+    return <ItemCard art={resultArt(r)} name={r.name} rarity={r.rarity} typeLine={typeLine(r)} stats={r.type === "item" ? r.stats : null} attributes={attributes} description={r.description}
+      hint={withActions ? null : recipe.owned ? "Already forged" : recipe.canCraft ? "Ready to forge" : `Needs ${recipe.missing.slice(0, 2).join(", ")}${recipe.missing.length > 2 ? "…" : ""}`}>
+      {r.type === "talisman" && r.cost && <p className="item-card-cost"><b>Cost:</b> {r.cost}</p>}
+      <ul className="ing-list">
+        {recipe.ingredients.map((ing) => <IngredientRow key={ing.key} ing={ing} materials={materials} tipBind={withActions ? tipBind : null} />)}
+        {recipe.coins > 0 && <li className={`ing-row ${data.coins >= recipe.coins ? "is-ok" : "is-short"}`}><span className="ing-icon"><Ico name="coin" size={14} /></span><span className="ing-name">Coins</span><span className="ing-count"><b>{data.coins}</b>/{recipe.coins}</span></li>}
+        {recipe.minLevel > 1 && <li className={`ing-row ${locked ? "is-short" : "is-ok"}`}><span className="ing-icon">★</span><span className="ing-name">Level</span><span className="ing-count"><b>{data.level}</b>/{recipe.minLevel}</span></li>}
+      </ul>
+      {withActions && <div className="item-card-actions"><button disabled={busy || !recipe.canCraft} className={recipe.canCraft ? "" : "secondary"} onClick={() => craft(recipe)}>
+        {recipe.owned ? "Owned" : locked ? `Reach level ${recipe.minLevel}` : recipe.canCraft ? "Forge" : "Missing materials"}
+      </button></div>}
+    </ItemCard>;
+  };
 
-    <div className="forge-tabs" role="tablist">
-      <button role="tab" aria-selected={tab === "recipes"} className={tab === "recipes" ? "is-on" : ""} onClick={() => setTab("recipes")}>Recipes</button>
-      <button role="tab" aria-selected={tab === "salvage"} className={tab === "salvage" ? "is-on" : ""} onClick={() => setTab("salvage")}>Salvage{data.salvage.length ? ` (${data.salvage.length})` : ""}</button>
-      {tab === "recipes" && <select aria-label="Show" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All recipes</option><option value="item">Gear</option><option value="talisman">Talismans</option></select>}
-    </div>
-    {note && <p className="forge-note" role="status">{note}</p>}
+  const selectedRecipe = tab === "craft" ? recipes.find((r) => r.key === selectedKey) : null;
+  const selectedMaterial = tab === "materials" ? materials.find((m) => m.key === selectedKey) : null;
+  const selectedSalvage = tab === "salvage" ? data.salvage.find((e) => `${e.type}-${e.key}` === selectedKey) : null;
+  const held = materials.filter((m) => m.count > 0);
 
-    {tab === "recipes" && <div className="cards forge-cards">{recipes.map((recipe) => {
-      const r = recipe.result;
-      const locked = data.level < recipe.minLevel;
-      return <article key={recipe.key} className={`card shop-card forge-card rarity-${r.rarity || "common"} ${recipe.owned ? "is-owned" : ""} ${locked ? "is-locked" : ""}`}>
-        {r.type === "item" ? <ItemArt item={art(r)} className="mode-card-icon shop-item-art" /> : <span className="mode-card-icon forge-talisman-icon">{r.icon}</span>}
-        <h3>{r.name}</h3>
-        <p className="item-kind">{r.type === "item" ? (slotName[r.kind] || r.kind) : "Talisman"} · <b className={`rarity-label rarity-${r.rarity || "common"}`}>{r.rarity || "common"}</b>{r.type === "item" ? " · Forge only" : ""}</p>
-        {r.type === "item" && <StatChips stats={r.stats} attributes={attributes} />}
-        <p className="muted">{r.description}{r.type === "talisman" && r.cost ? <> <em className="forge-tal-cost">{r.cost}</em></> : null}</p>
-        <ul className="forge-cost">
-          <li className={m.dust >= recipe.cost.dust ? "ok" : "short"}>✦ {recipe.cost.dust} Dust</li>
-          {recipe.cost.shards > 0 && <li className={m.shards >= recipe.cost.shards ? "ok" : "short"}>◆ {recipe.cost.shards} Shard{recipe.cost.shards > 1 ? "s" : ""}</li>}
-          {recipe.cost.coins > 0 && <li className={m.coins >= recipe.cost.coins ? "ok" : "short"}>{recipe.cost.coins} coins</li>}
-          {recipe.minLevel > 1 && <li className={locked ? "short" : "ok"}>Level {recipe.minLevel}</li>}
-        </ul>
-        <button disabled={busy || !recipe.canCraft} className={recipe.canCraft ? "" : "secondary"} title={recipe.missing.length ? `Needs ${recipe.missing.join(", ")}` : undefined} onClick={() => craft(recipe)}>
-          {recipe.owned ? "Owned" : locked ? `Reach level ${recipe.minLevel}` : recipe.canCraft ? "Forge" : "Not enough"}
-        </button>
-      </article>;
-    })}</div>}
+  return <div className="inv-layout shop-layout forge-layout">
+    <section className="inv-panel" aria-label="The Forge">
+      <header className="inv-panel-head">
+        <div className="inv-tabs" role="tablist">
+          <button role="tab" aria-selected={tab === "craft"} className={tab === "craft" ? "is-on" : ""} onClick={() => switchTab("craft")}>Craft</button>
+          <button role="tab" aria-selected={tab === "materials"} className={tab === "materials" ? "is-on" : ""} onClick={() => switchTab("materials")}>Materials</button>
+          <button role="tab" aria-selected={tab === "salvage"} className={tab === "salvage" ? "is-on" : ""} onClick={() => switchTab("salvage")}>Salvage{data.salvage.length ? ` ${data.salvage.length}` : ""}</button>
+        </div>
+        {tab === "craft" && <div className="inv-filters is-inline" role="group" aria-label="Show">
+          {[["all", "All"], ["item", "Gear"], ["talisman", "Talismans"]].map(([key, label]) => <button key={key} className={filter === key ? "is-on" : ""} onClick={() => setFilter(key)}>{label}</button>)}
+        </div>}
+        {tab === "materials" && <span className="inv-count">{held.length} / {materials.length} kinds</span>}
+      </header>
+      {note && <p className="forge-note" role="status">{note}</p>}
 
-    {tab === "salvage" && (data.salvage.length === 0
-      ? <div className="rank-card"><h3>Nothing to salvage</h3><p className="muted">Items and talismans you own but are not using show here. Starter gear and anything you have equipped cannot be salvaged.</p></div>
-      : <div className="cards forge-cards">{data.salvage.map((entry) => <article key={`${entry.type}-${entry.key}`} className={`card shop-card forge-card rarity-${entry.rarity || "common"}`}>
-          {entry.type === "item" ? <ItemArt item={{ key: entry.key, icon: entry.icon, image: entry.imageUrl || "" }} className="mode-card-icon shop-item-art" /> : <span className="mode-card-icon forge-talisman-icon">{entry.icon}</span>}
-          <h3>{entry.name}</h3>
-          <p className="item-kind">{entry.type === "item" ? (slotName[entry.kind] || entry.kind) : "Talisman"} · <b className={`rarity-label rarity-${entry.rarity || "common"}`}>{entry.rarity || "common"}</b></p>
-          <ul className="forge-cost"><li className="ok">+{entry.dust} Dust</li>{entry.shards > 0 && <li className="ok">+{entry.shards} Shard{entry.shards > 1 ? "s" : ""}</li>}</ul>
-          <button className="secondary" disabled={busy} onClick={() => salvage(entry)}>Salvage</button>
-        </article>)}</div>)}
+      {tab === "craft" && <div className="inv-grid" style={{ "--cols": FORGE_COLUMNS }}>
+        {recipes.map((recipe) => <SlotTile key={recipe.key} art={resultArt(recipe.result)} rarity={recipe.result.rarity} owned={recipe.owned} locked={data.level < recipe.minLevel}
+          selected={selectedKey === recipe.key} label={recipe.result.name} tip={tipBind(recipeCard(recipe, false))} onClick={() => setSelectedKey(recipe.key)}
+          badge={!recipe.owned && recipe.canCraft ? <span className="is-ready">Ready</span> : null} />)}
+        {Array.from({ length: emptyCells(recipes.length, FORGE_COLUMNS, 21) }).map((_, index) => <span key={`e${index}`} className="slot-tile is-blank" aria-hidden="true" />)}
+      </div>}
+
+      {tab === "materials" && <div className="inv-grid" style={{ "--cols": FORGE_COLUMNS }}>
+        {materials.map((m) => <SlotTile key={m.key} art={materialArt(m)} rarity={m.rarity} selected={selectedKey === m.key} label={`${m.name}: ${m.count}`} locked={m.count === 0}
+          tip={tipBind(<MaterialCard material={m} />)} onClick={() => setSelectedKey(m.key)} badge={m.count > 0 ? <span className="is-count">{m.count}</span> : null} />)}
+        {Array.from({ length: emptyCells(materials.length, FORGE_COLUMNS, 21) }).map((_, index) => <span key={`e${index}`} className="slot-tile is-blank" aria-hidden="true" />)}
+      </div>}
+
+      {tab === "salvage" && <>
+        <div className="inv-grid" style={{ "--cols": FORGE_COLUMNS }}>
+          {data.salvage.map((entry) => { const k = `${entry.type}-${entry.key}`; return <SlotTile key={k} art={entry.type === "item" ? itemArt({ key: entry.key, icon: entry.icon, image: entry.imageUrl || "" }) : talismanArt(entry)} rarity={entry.rarity}
+            selected={selectedKey === k} label={entry.name} tip={tipBind(<ItemCard art={entry.type === "item" ? itemArt({ key: entry.key, icon: entry.icon, image: entry.imageUrl || "" }) : talismanArt(entry)} name={entry.name} rarity={entry.rarity} typeLine={entry.type === "item" ? (slotName[entry.kind] || entry.kind) : "Talisman"} description={entry.description} hint={`Salvage for ${entry.gives.map((g) => `${g.count} ${g.name}`).join(", ")}`} />)}
+            onClick={() => setSelectedKey(k)} />; })}
+          {Array.from({ length: emptyCells(data.salvage.length, FORGE_COLUMNS, 14) }).map((_, index) => <span key={`e${index}`} className="slot-tile is-blank" aria-hidden="true" />)}
+        </div>
+        {data.salvage.length === 0 && <p className="muted inv-note">Gear and talismans you own but are not wearing show here. Starter gear cannot be salvaged.</p>}
+      </>}
+    </section>
+
+    <aside className="inv-panel inv-detail" aria-label="Selected">
+      {selectedRecipe && recipeCard(selectedRecipe, true)}
+      {selectedMaterial && <MaterialCard material={selectedMaterial} />}
+      {selectedSalvage && <ItemCard art={selectedSalvage.type === "item" ? itemArt({ key: selectedSalvage.key, icon: selectedSalvage.icon, image: selectedSalvage.imageUrl || "" }) : talismanArt(selectedSalvage)} name={selectedSalvage.name} rarity={selectedSalvage.rarity} typeLine={selectedSalvage.type === "item" ? (slotName[selectedSalvage.kind] || selectedSalvage.kind) : "Talisman"} description={selectedSalvage.description}>
+        <p className="item-card-desc"><b className="item-card-label">Breaks down into</b></p>
+        <ul className="ing-list">{selectedSalvage.gives.map((g) => <li key={g.key} className="ing-row is-ok"><span className="ing-icon">{g.icon}</span><span className="ing-name">{g.name}</span><span className="ing-count"><b>+{g.count}</b></span></li>)}</ul>
+        <div className="item-card-actions"><button className="secondary" disabled={busy} onClick={() => salvage(selectedSalvage)}>Salvage</button></div>
+      </ItemCard>}
+      {!selectedRecipe && !selectedMaterial && !selectedSalvage && <div className="inv-note">
+        {tab === "craft" && <p className="muted">Pick a recipe to see what it needs. Gather materials from duels now; exploration and dungeons will drop the rarer ones.</p>}
+        {tab === "materials" && <p className="muted">Your materials. Hover one to see where it is found.</p>}
+        {tab === "salvage" && <p className="muted">Break spare gear and talismans back into materials.</p>}
+      </div>}
+    </aside>
+    {tipLayer}
   </div>;
 }
 
@@ -1299,7 +1393,7 @@ function ProfilePanel({ token, username, me, onClose, onChanged, onLogout }) {
             {tile("Talismans", data.talismansOwned, data.equippedTalisman ? `Using ${data.equippedTalisman}` : "None equipped")}
             {tile("Member since", sinceText(data.memberSince))}
             {own && data.wallet && tile("Wallet", `${data.wallet.coins.toLocaleString()} coins`, `${data.wallet.gems} gems`)}
-            {own && data.wallet && tile("Forge materials", `${(data.wallet.dust ?? 0).toLocaleString()} Rune Dust`, `${data.wallet.shards ?? 0} Ember Shards`)}
+            {own && data.wallet && tile("Materials", `${(data.wallet.materials ?? 0).toLocaleString()}`, "Crafting materials held")}
           </div>
         </section>
 
@@ -1412,147 +1506,173 @@ function WorldBottomNav({ active, onHome, onNavigate }) {
   </nav>;
 }
 
-/* ---------- Character screen: the mage in the middle, gear slots around, inventory beside ----------
-   Layout is drawn on a 1000 x 760 stage. The mage sits at x 300-700, y 60-620 (its 200 x 280 art at 2x),
-   so a body point (bx, by) on the art lands at (300 + 2bx, 60 + 2by) on the stage. */
-const DOLL_SLOTS = {
-  helmet: { side: "left", y: 120, body: [98, 58], label: "Head" },
-  mantle: { side: "left", y: 330, body: [62, 112], label: "Shoulders" },
-  armor: { side: "left", y: 540, body: [98, 172], label: "Chest" },
-  sigil: { side: "right", y: 120, body: [98, 132], label: "Neck" },
-  ring: { side: "right", y: 330, body: [148, 172], label: "Hand" },
-  charm: { side: "right", y: 540, body: [82, 206], label: "Waist" },
-  frame: { side: "bottom", y: 690, body: null, label: "Dice" }
-};
-const DOLL_TILE = { w: 210, h: 150 };
-
-function slotBox(key) {
-  const slot = DOLL_SLOTS[key];
-  if (!slot) return null;
-  const cx = slot.side === "left" ? 125 : slot.side === "right" ? 875 : 500;
-  return { x: cx - DOLL_TILE.w / 2, y: slot.y - DOLL_TILE.h / 2, cx, cy: slot.y };
+/* ---------- Inventory pieces shared by Character, Shop and Forge ----------
+   Every item is a small square slot. Hovering with a mouse shows its card next to it; a click (or a tap
+   on a phone) selects it and shows the same card with its buttons in the side panel. */
+function useItemTip() {
+  const [tip, setTip] = useState(null);
+  const bind = useCallback((content) => ({
+    onPointerEnter: (event) => { if (event.pointerType === "mouse") setTip({ rect: event.currentTarget.getBoundingClientRect(), content }); },
+    onPointerLeave: () => setTip(null),
+    onPointerDown: () => setTip(null)
+  }), []);
+  const layer = tip ? <ItemTipLayer rect={tip.rect}>{tip.content}</ItemTipLayer> : null;
+  return [bind, layer];
 }
 
-function bodyPoint(key) {
-  const body = DOLL_SLOTS[key]?.body;
-  return body ? [300 + body[0] * 2, 60 + body[1] * 2] : null;
+function ItemTipLayer({ rect, children }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight, gap = 10;
+    let left = rect.right + gap;
+    if (left + w > window.innerWidth - 8) left = rect.left - w - gap;
+    left = Math.max(8, left);
+    const top = Math.max(8, Math.min(rect.top - 6, window.innerHeight - h - 8));
+    setPos({ left, top });
+  }, [rect]);
+  return <div ref={ref} className="item-tip" role="tooltip" style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: 0 }}>{children}</div>;
 }
+
+// The card used both in the hover tooltip and in the side panel.
+function ItemCard({ art, name, rarity = "common", typeLine, stats, attributes, description, children, hint }) {
+  const hasStats = Object.values(stats || {}).some(Boolean);
+  return <div className={`item-card rarity-${rarity}`}>
+    <div className="item-card-head">
+      {art && <span className="item-card-art">{art}</span>}
+      <div><strong>{name}</strong><span className="item-card-type"><b className={`rarity-label rarity-${rarity}`}>{rarity}</b>{typeLine ? ` · ${typeLine}` : ""}</span></div>
+    </div>
+    {hasStats && <StatChips stats={stats} attributes={attributes} />}
+    {description && <p className="item-card-desc">{description}</p>}
+    {children}
+    {hint && <p className="item-card-hint">{hint}</p>}
+  </div>;
+}
+
+function SlotTile({ art, rarity = "common", selected, equipped, locked, owned, badge, tip, onClick, onDoubleClick, label, drag }) {
+  return <button type="button" className={`slot-tile rarity-${rarity} ${selected ? "is-selected" : ""} ${equipped ? "is-equipped" : ""} ${locked ? "is-locked" : ""} ${owned ? "is-owned" : ""}`}
+    aria-label={label} aria-pressed={selected ? true : undefined} onClick={onClick} onDoubleClick={onDoubleClick} {...(tip || {})} {...(drag || {})}>
+    <span className="slot-tile-art">{art}</span>
+    {equipped && <i className="slot-flag is-worn" aria-hidden="true">E</i>}
+    {owned && !equipped && <i className="slot-flag is-owned" aria-hidden="true">✓</i>}
+    {locked && <i className="slot-flag is-locked" aria-hidden="true">🔒</i>}
+    {badge && <span className="slot-badge">{badge}</span>}
+  </button>;
+}
+
+const emptyCells = (count, columns, min) => Math.max(min, Math.ceil(count / columns) * columns) - count;
+const itemArt = (item) => <ItemArt item={item} className="tile-art" />;
+const talismanArt = (talisman) => <TalismanMedal talisman={talisman} size="sm" />;
+
+/* ---------- Character screen: equipment around the mage, backpack grid beside it ---------- */
+const EQUIP_LEFT = ["helmet", "mantle", "armor"];
+const EQUIP_RIGHT = ["sigil", "ring", "charm"];
+const BAG_COLUMNS = 6;
 
 function BuildScreen({ profile, content, realm, busy, notice, onAction, onBack, onNavigate, onLogout }) {
   const [filter, setFilter] = useState("all");
-  const [selectedKey, setSelectedKey] = useState(null);
-  const [tab, setTab] = useState("inventory");
+  const [selected, setSelected] = useState(null); // { type: "item" | "talisman", key }
+  const [tab, setTab] = useState("bag");
+  const [dragKind, setDragKind] = useState(null);
+  const [tipBind, tipLayer] = useItemTip();
   const attributes = content?.attributes || [];
   const slotName = Object.fromEntries((content?.slots || []).map((slot) => [slot.key, slot.name]));
   const build = realm?.build;
   const inventory = realm?.inventory || [];
   const ownedTalismans = (realm?.talismans || []).filter((t) => t.owned);
   const equippedTalisman = ownedTalismans.find((t) => t.equipped);
-  const shown = filter === "all" ? inventory : inventory.filter((item) => item.kind === filter);
-  const selected = inventory.find((item) => item.key === selectedKey) || null;
+  const bagItems = inventory.filter((item) => !item.equipped && (filter === "all" || item.kind === filter));
+  const slotByKey = Object.fromEntries((build?.slots || []).map((slot) => [slot.key, slot]));
+  const selItem = selected?.type === "item" ? inventory.find((item) => item.key === selected.key) : null;
+  const selTalisman = selected?.type === "talisman" ? ownedTalismans.find((t) => t.key === selected.key) : null;
 
-  function pickSlot(slot) {
-    setFilter(slot.key);
-    setSelectedKey(slot.item?.key || null);
-    setTab("inventory");
+  const equipItem = (item) => onAction(`/realm/inventory/${item.key}/${item.equipped ? "unequip" : "equip"}`);
+  const equipTalisman = (t) => onAction(t.equipped ? "/realm/talismans/unequip" : `/realm/talismans/${t.key}/equip`);
+  const itemTip = (item, hint) => tipBind(<ItemCard art={itemArt(item)} name={item.name} rarity={item.rarity} typeLine={slotName[item.kind] || item.kind} stats={item.stats} attributes={attributes} description={item.description} hint={hint} />);
+  const talismanTip = (t, hint) => tipBind(<ItemCard art={talismanArt(t)} name={t.name} rarity={t.rarity || "rare"} typeLine={`Talisman · ${t.active ? "use in duel" : "triggers itself"}`} description={t.effect} hint={hint}>{t.drawback ? <p className="item-card-cost"><b>Cost:</b> {t.drawback}</p> : null}</ItemCard>);
+
+  function equipSlot(key) {
+    const slot = slotByKey[key];
+    const item = slot?.item ? inventory.find((entry) => entry.key === slot.item.key) || { ...slot.item, equipped: true } : null;
+    const isTarget = dragKind && dragKind === key;
+    return <div className={`equip-slot ${isTarget ? "is-target" : ""}`} key={key}
+      onDragOver={(event) => { if (dragKind === key) event.preventDefault(); }}
+      onDrop={(event) => { event.preventDefault(); const dropped = inventory.find((entry) => entry.key === event.dataTransfer.getData("text/plain")); setDragKind(null); if (dropped && dropped.kind === key && !busy) equipItem(dropped); }}>
+      {item
+        ? <SlotTile art={itemArt(item)} rarity={item.rarity} equipped label={`${slot.name}: ${item.name}`} selected={selected?.key === item.key}
+            tip={itemTip(item, "Double-click to take off")} onClick={() => { setSelected({ type: "item", key: item.key }); setTab("bag"); }} onDoubleClick={() => !busy && equipItem({ ...item, equipped: true })}
+            drag={{ draggable: true, onDragStart: (event) => { event.dataTransfer.setData("text/plain", `off:${item.key}`); }, onDragEnd: () => setDragKind(null) }} />
+        : <button type="button" className="slot-tile is-empty" aria-label={`${slotName[key] || key}: empty`} onClick={() => { setFilter(key); setTab("bag"); }}>
+            <span className="slot-empty-glyph">{SLOT_GLYPH[key] || "+"}</span>
+          </button>}
+      <small>{slotName[key] || key}</small>
+    </div>;
   }
 
   return <section className="home-world build-world menu-world" aria-label="Character and inventory">
     <WorldTopbar profile={profile} onNavigate={onNavigate} onLogout={onLogout} title="Character" eyebrow="YOUR MAGE" onBack={onBack} />
     <section className="arena-content build-content">
-      <div className="arena-head">
-        <div><span className="eyebrow">YOUR MAGE</span><h2>Character</h2></div>
-        <div className="realm-toolbar-side">
-          <button className="secondary" onClick={() => onNavigate("shop")}>Shop</button>
-          <button className="secondary" onClick={onBack}>Back to home</button>
-        </div>
-      </div>
       {notice && <div className="toast build-toast" role="status">{notice}</div>}
       {!realm && <p className="muted">Loading your gear…</p>}
-      {realm && !build && <div className="message" role="alert">The game server is out of date, so your build cannot load. Stop the API, run dotnet build, then dotnet run.</div>}
-      {build && <div className="build-layout">
-        <div className="doll-panel">
-          <div className="doll-head">
-            <button type="button" className={`doll-talisman ${equippedTalisman ? "is-filled" : ""}`} onClick={() => setTab("talismans")} aria-label={`Talisman: ${equippedTalisman ? equippedTalisman.name : "none"}`}>
-              {equippedTalisman ? <TalismanMedal talisman={equippedTalisman} size="sm" /> : <span className="talisman-slip size-sm is-empty" aria-hidden="true"><i>+</i></span>}
-              <span><small>TALISMAN</small><b>{equippedTalisman ? equippedTalisman.name : "None"}</b></span>
-            </button>
-            <button type="button" className="doll-classes" onClick={() => onNavigate("characters")}>{profile.className} · Classes</button>
+      {realm && !build && <div className="message" role="alert">The game server is out of date, so your build cannot load.</div>}
+      {build && <div className="inv-layout">
+        <section className="inv-panel equip-panel" aria-label="Equipment">
+          <header className="inv-panel-head"><h3>Equipment</h3><button type="button" className="inv-link" onClick={() => onNavigate("characters")}>{profile.className} ›</button></header>
+          <div className="equip-stage">
+            <div className="equip-col">{EQUIP_LEFT.map(equipSlot)}</div>
+            <div className="equip-figure"><MageFigure cls={profile.className} /></div>
+            <div className="equip-col">{EQUIP_RIGHT.map(equipSlot)}</div>
           </div>
-          <div className="doll-stage">
-            <svg className="doll-lines" viewBox="0 0 1000 760" preserveAspectRatio="none" aria-hidden="true">
-              {build.slots.map((slot) => {
-                const box = slotBox(slot.key);
-                const point = bodyPoint(slot.key);
-                if (!box || !point) return null;
-                const startX = DOLL_SLOTS[slot.key].side === "left" ? box.x + DOLL_TILE.w : box.x;
-                const elbowX = DOLL_SLOTS[slot.key].side === "left" ? startX + 40 : startX - 40;
-                return <g key={slot.key} className={`doll-link ${slot.item ? "is-filled" : ""} ${filter === slot.key ? "is-active" : ""}`}>
-                  <path d={`M${startX} ${box.cy} L${elbowX} ${box.cy} L${point[0]} ${point[1]}`} />
-                  <circle cx={point[0]} cy={point[1]} r={slot.item ? 9 : 6} />
-                </g>;
-              })}
-            </svg>
-            <div className="doll-figure"><MageFigure cls={profile.className} /></div>
-            {build.slots.map((slot) => {
-              const box = slotBox(slot.key);
-              if (!box) return null;
-              const style = { left: `${box.x / 10}%`, top: `${box.y / 7.6}%`, width: `${DOLL_TILE.w / 10}%`, height: `${DOLL_TILE.h / 7.6}%` };
-              return <button key={slot.key} type="button" style={style} className={`doll-slot side-${DOLL_SLOTS[slot.key].side} ${slot.item ? `is-filled rarity-${slot.item.rarity || "common"}` : "is-empty"} ${filter === slot.key ? "is-active" : ""}`} onClick={() => pickSlot(slot)} aria-label={`${slot.name}: ${slot.item ? slot.item.name : "empty"}`}>
-                <span className="doll-slot-name">{slot.name}</span>
-                {slot.item
-                  ? <><ItemArt item={slot.item} className="doll-slot-icon" /><strong>{slot.item.name}</strong><StatChips stats={slot.item.stats} attributes={attributes} compact /></>
-                  : <span className="doll-slot-empty">Empty · {DOLL_SLOTS[slot.key].label}</span>}
-              </button>;
-            })}
+          <div className="equip-row">
+            {equipSlot("frame")}
+            <div className="equip-slot">
+              {equippedTalisman
+                ? <SlotTile art={talismanArt(equippedTalisman)} rarity={equippedTalisman.rarity || "rare"} equipped label={`Talisman: ${equippedTalisman.name}`} selected={selected?.key === equippedTalisman.key}
+                    tip={talismanTip(equippedTalisman, "Double-click to take off")} onClick={() => { setSelected({ type: "talisman", key: equippedTalisman.key }); setTab("talismans"); }} onDoubleClick={() => !busy && equipTalisman(equippedTalisman)} />
+                : <button type="button" className="slot-tile is-empty" aria-label="Talisman: empty" onClick={() => setTab("talismans")}><span className="slot-empty-glyph">ᛟ</span></button>}
+              <small>Talisman</small>
+            </div>
           </div>
-          <div className="doll-summary">
-            {attributes.map((item) => <span key={item.key} className={`doll-attr stat-${item.key}`} title={`${item.name}: ${item.effect}`}><b>{item.icon}</b>{item.name}<em>{build.active[item.key] || 0}/{item.cap}</em></span>)}
+          <div className="equip-stats">
+            {attributes.map((item) => { const active = build.active[item.key] || 0; return <span key={item.key} className={`equip-stat stat-${item.key} ${active ? "is-on" : ""}`} title={`${item.name}: ${item.effect}`}><b>{item.icon}</b>{item.name}<em>{active}/{item.cap}</em></span>; })}
           </div>
-        </div>
+        </section>
 
-        <aside className="bag-panel">
-          <div className="bag-tabs" role="tablist">
-            <button role="tab" aria-selected={tab === "inventory"} className={tab === "inventory" ? "is-on" : ""} onClick={() => setTab("inventory")}>Inventory <small>{inventory.length}</small></button>
-            <button role="tab" aria-selected={tab === "talismans"} className={tab === "talismans" ? "is-on" : ""} onClick={() => setTab("talismans")}>Talismans <small>{ownedTalismans.length}</small></button>
-            <button role="tab" aria-selected={tab === "attributes"} className={tab === "attributes" ? "is-on" : ""} onClick={() => setTab("attributes")}>Attributes</button>
-          </div>
+        <section className="inv-panel bag-panel-v2" aria-label="Backpack"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => { const data = event.dataTransfer.getData("text/plain"); if (data.startsWith("off:")) { const item = inventory.find((entry) => entry.key === data.slice(4)); if (item && !busy) equipItem({ ...item, equipped: true }); } }}>
+          <header className="inv-panel-head">
+            <div className="inv-tabs" role="tablist">
+              <button role="tab" aria-selected={tab === "bag"} className={tab === "bag" ? "is-on" : ""} onClick={() => setTab("bag")}>Backpack</button>
+              <button role="tab" aria-selected={tab === "talismans"} className={tab === "talismans" ? "is-on" : ""} onClick={() => setTab("talismans")}>Talismans</button>
+              <button role="tab" aria-selected={tab === "attributes"} className={tab === "attributes" ? "is-on" : ""} onClick={() => setTab("attributes")}>Attributes</button>
+            </div>
+            {tab === "bag" && <span className="inv-count">{inventory.filter((item) => !item.equipped).length} items</span>}
+          </header>
 
-          {tab === "inventory" && <>
-            <div className="bag-filters">
+          {tab === "bag" && <>
+            <div className="inv-filters" role="group" aria-label="Show slot">
               <button className={filter === "all" ? "is-on" : ""} onClick={() => setFilter("all")}>All</button>
-              {(content?.slots || []).map((slot) => <button key={slot.key} className={filter === slot.key ? "is-on" : ""} onClick={() => setFilter(slot.key)}>{slot.name}</button>)}
+              {(content?.slots || []).map((slot) => <button key={slot.key} className={filter === slot.key ? "is-on" : ""} onClick={() => setFilter(slot.key)} title={slot.name}>{SLOT_GLYPH[slot.key] || ""} {slot.name}</button>)}
             </div>
-            <div className="bag-grid">
-              {shown.length === 0 && <p className="muted bag-empty">Nothing for this slot yet. Find gear in the shop.</p>}
-              {shown.map((item) => <button key={item.key} type="button" className={`bag-item rarity-${item.rarity || "common"} ${item.equipped ? "is-equipped" : ""} ${selectedKey === item.key ? "is-selected" : ""}`} onClick={() => setSelectedKey(item.key)} title={item.name}>
-                <ItemArt item={item} className="bag-item-icon" />
-                <span className="bag-item-name">{item.name}</span>
-                {item.equipped && <span className="bag-item-worn">Worn</span>}
-              </button>)}
-            </div>
-            <div className="bag-detail">
-              {selected ? <>
-                <div className="bag-detail-head"><ItemArt item={selected} className="bag-item-icon bag-detail-art" /><div><h3>{selected.name}</h3><span className="item-kind">{slotName[selected.kind] || selected.kind} · <b className={`rarity-label rarity-${selected.rarity || "common"}`}>{selected.rarity || "common"}</b></span></div></div>
-                <StatChips stats={selected.stats} attributes={attributes} />
-                {!Object.values(selected.stats || {}).some(Boolean) && <p className="muted">Cosmetic. No attribute bonus.</p>}
-                <p className="muted">{selected.description}</p>
-                {selected.equipped
-                  ? <button className="secondary" disabled={busy} onClick={() => onAction(`/realm/inventory/${selected.key}/unequip`)}>Take off</button>
-                  : <button disabled={busy} onClick={() => onAction(`/realm/inventory/${selected.key}/equip`)}>Equip</button>}
-              </> : <p className="muted">Pick an item to see its stats, or click a slot on your mage.</p>}
+            <div className="inv-grid" style={{ "--cols": BAG_COLUMNS }}>
+              {bagItems.map((item) => <SlotTile key={item.key} art={itemArt(item)} rarity={item.rarity} label={item.name} selected={selected?.key === item.key}
+                tip={itemTip(item, "Double-click or drag onto your mage to equip")} onClick={() => setSelected({ type: "item", key: item.key })} onDoubleClick={() => !busy && equipItem(item)}
+                drag={{ draggable: true, onDragStart: (event) => { event.dataTransfer.setData("text/plain", item.key); setDragKind(item.kind); }, onDragEnd: () => setDragKind(null) }} />)}
+              {Array.from({ length: emptyCells(bagItems.length, BAG_COLUMNS, 24) }).map((_, index) => <span key={`e${index}`} className="slot-tile is-blank" aria-hidden="true" />)}
             </div>
           </>}
 
-          {tab === "talismans" && <div className="bag-talismans">
-            {ownedTalismans.length === 0 && <div className="bag-empty-talisman"><p className="muted">You have no talismans yet. Each one bends one rule of the duel.</p><button onClick={() => onNavigate("shop")}>Visit the shop</button></div>}
-            {ownedTalismans.map((t) => <TalismanCard key={t.key} talisman={t}>
-              {t.equipped
-                ? <button className="secondary" disabled={busy} onClick={() => onAction("/realm/talismans/unequip")}>Take off</button>
-                : <button disabled={busy} onClick={() => onAction(`/realm/talismans/${t.key}/equip`)}>Equip</button>}
-            </TalismanCard>)}
-            {ownedTalismans.length > 0 && <p className="muted build-note">One talisman at a time. It locks in when a duel starts.</p>}
-          </div>}
+          {tab === "talismans" && <>
+            <div className="inv-grid" style={{ "--cols": BAG_COLUMNS }}>
+              {ownedTalismans.map((t) => <SlotTile key={t.key} art={talismanArt(t)} rarity={t.rarity || "rare"} equipped={t.equipped} label={t.name} selected={selected?.key === t.key}
+                tip={talismanTip(t, t.equipped ? "Double-click to take off" : "Double-click to equip")} onClick={() => setSelected({ type: "talisman", key: t.key })} onDoubleClick={() => !busy && equipTalisman(t)} />)}
+              {Array.from({ length: emptyCells(ownedTalismans.length, BAG_COLUMNS, 12) }).map((_, index) => <span key={`e${index}`} className="slot-tile is-blank" aria-hidden="true" />)}
+            </div>
+            {ownedTalismans.length === 0 && <p className="muted inv-note">No talismans yet. Each one bends one rule of the duel. <button type="button" className="inv-link" onClick={() => onNavigate("shop")}>Visit the shop ›</button></p>}
+          </>}
 
           {tab === "attributes" && <div className="bag-attributes">
             {attributes.map((item) => {
@@ -1567,14 +1687,32 @@ function BuildScreen({ profile, content, realm, busy, notice, onAction, onBack, 
                 </div>
               </div>;
             })}
-            <p className="muted build-note">Your bonuses lock in when a duel starts.</p>
           </div>}
-        </aside>
+
+          {tab !== "attributes" && <div className="inv-detail">
+            {selItem && <ItemCard art={itemArt(selItem)} name={selItem.name} rarity={selItem.rarity} typeLine={slotName[selItem.kind] || selItem.kind} stats={selItem.stats} attributes={attributes} description={selItem.description}>
+              {!Object.values(selItem.stats || {}).some(Boolean) && <p className="item-card-desc">Cosmetic. No attribute bonus.</p>}
+              <div className="item-card-actions">{selItem.equipped
+                ? <button className="secondary" disabled={busy} onClick={() => equipItem(selItem)}>Take off</button>
+                : <button disabled={busy} onClick={() => equipItem(selItem)}>Equip</button>}</div>
+            </ItemCard>}
+            {selTalisman && <ItemCard art={talismanArt(selTalisman)} name={selTalisman.name} rarity={selTalisman.rarity || "rare"} typeLine="Talisman" description={selTalisman.effect}>
+              {selTalisman.drawback && <p className="item-card-cost"><b>Cost:</b> {selTalisman.drawback}</p>}
+              <div className="item-card-actions">{selTalisman.equipped
+                ? <button className="secondary" disabled={busy} onClick={() => equipTalisman(selTalisman)}>Take off</button>
+                : <button disabled={busy} onClick={() => equipTalisman(selTalisman)}>Equip</button>}</div>
+            </ItemCard>}
+            {!selItem && !selTalisman && <p className="muted inv-note">Select an item to see it here. Double-click equips; you can also drag gear onto your mage.</p>}
+          </div>}
+        </section>
       </div>}
     </section>
+    {tipLayer}
     <WorldBottomNav active="inventory" onHome={onBack} onNavigate={onNavigate} />
   </section>;
 }
+
+const SLOT_GLYPH = { helmet: "♜", mantle: "✦", armor: "▣", sigil: "❖", ring: "◎", charm: "✧", frame: "⬡" };
 
 function DuelBanner({ duel, home = false, onContinue, onForfeit }) {
   const [confirming, setConfirming] = useState(false);
@@ -2256,10 +2394,10 @@ function ResultSummary({ combat, onLoadRounds }) {
       </>}
       {combat.mode !== "friend" && <div><dt>Coins</dt><dd className="is-up">+{result.coins}</dd></div>}
       <div><dt>Experience</dt><dd className="is-xp">+{result.xp ?? 0} XP</dd></div>
-      {(result.dust > 0 || result.shards > 0) && <div><dt>Forge materials</dt><dd className="is-forge">{[result.dust ? `+${result.dust} Rune Dust` : null, result.shards ? `+${result.shards} Ember Shard${result.shards > 1 ? "s" : ""}` : null].filter(Boolean).join(" · ")}</dd></div>}
+      {result.drops?.length > 0 && <div><dt>Materials</dt><dd className="is-forge result-drops">{result.drops.map((d) => <span key={d.key} className={`drop-chip rarity-${d.rarity}`} title={d.name}><i>{d.icon}</i>{d.name} ×{d.count}</span>)}</dd></div>}
       <div><dt>Turns</dt><dd>{result.turns}</dd></div>
     </dl>}
-    {result && combat.practice && result.xp > 0 && <dl className="result-rows"><div><dt>Experience</dt><dd className="is-xp">+{result.xp} XP</dd></div>{result.dust > 0 && <div><dt>Forge materials</dt><dd className="is-forge">+{result.dust} Rune Dust</dd></div>}</dl>}
+    {result && combat.practice && result.xp > 0 && <dl className="result-rows"><div><dt>Experience</dt><dd className="is-xp">+{result.xp} XP</dd></div>{result.drops?.length > 0 && <div><dt>Materials</dt><dd className="is-forge result-drops">{result.drops.map((d) => <span key={d.key} className={`drop-chip rarity-${d.rarity}`} title={d.name}><i>{d.icon}</i>{d.name} ×{d.count}</span>)}</dd></div>}</dl>}
     {result?.levelUp && <p className="result-levelup"><b>Level {result.levelUp.level}!</b> +{result.levelUp.coins} coins{result.levelUp.gems ? ` · +${result.levelUp.gems} gems` : ""}</p>}
     {result?.leagueChange > 0 && <p className="result-promo">Promoted! You climbed {result.leagueChange} league{result.leagueChange > 1 ? "s" : ""}.</p>}
     {result?.leagueChange < 0 && <p className="result-demo">You dropped a league. Win your way back.</p>}

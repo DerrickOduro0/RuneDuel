@@ -163,3 +163,4 @@
 .adm-stats.small b{font-size:1.4rem}
 .adm-inline.wrap{flex-wrap:wrap}.adm-inline.wrap input{flex:1;min-width:220px}
 .adm-row-actions{white-space:nowrap}.adm-row-actions button{margin-left:4px}
+.adm-subhead{margin:16px 0 8px;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:#9aa3b1}

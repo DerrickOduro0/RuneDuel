@@ -98,6 +98,7 @@ using (var seedScope = app.Services.CreateScope())
     var seedDb = seedScope.ServiceProvider.GetRequiredService<RuneDbContext>();
     ContentStore.Seed(seedDb, seedRules);
     Forge.Seed(seedDb);
+    Materials.Seed(seedDb);
     LiveConfig.Reload(seedDb, seedRules);
     // Admin:Users (comma separated usernames) are the accounts that can open the admin page.
     var adminNames = (app.Configuration["Admin:Users"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -979,12 +980,10 @@ static async Task ApplyProgress(RuneDbContext db, CombatMatch match, Guid? winne
         var levelBefore = Progression.LevelFor(player.Xp);
         var (newLevel, _, _) = Progression.Grant(player, xp);
         if (isA) { match.XpA = xp; match.LevelUpA = newLevel; } else { match.XpB = xp; match.LevelUpB = newLevel; }
-        // Forge materials: from the duel, plus Ember Shards for each level gained.
-        var (dust, shards) = Forge.DuelDrops(match, id, winnerId);
-        if (newLevel > 0) shards += (newLevel - levelBefore) * Forge.Settings.ShardLevelUp;
-        player.Dust += dust;
-        player.Shards += shards;
-        if (isA) { match.DustA = dust; match.ShardsA = shards; } else { match.DustB = dust; match.ShardsB = shards; }
+        // Crafting materials from the duel, plus a Rune Tablet for each level gained.
+        var drops = Materials.DuelDrops(match, id, winnerId, newLevel > 0 ? newLevel - levelBefore : 0);
+        await Materials.Give(db, id, drops);
+        if (isA) match.DropsA = Materials.Format(drops); else match.DropsB = Materials.Format(drops);
         if (match.ShadeDifficulty is null && match.Mode != DuelMode.Friend && winnerId is not null)
         {
             if (winnerId == id) { player.WinStreak++; player.BestWinStreak = Math.Max(player.BestWinStreak, player.WinStreak); }
@@ -1195,17 +1194,15 @@ static void EnsureSqliteSchema(RuneDbContext db)
         ["Motto"] = "TEXT NOT NULL DEFAULT ''",
         ["WinStreak"] = "INTEGER NOT NULL DEFAULT 0",
         ["BestWinStreak"] = "INTEGER NOT NULL DEFAULT 0",
-        ["BestLeague"] = "INTEGER NOT NULL DEFAULT 10",
-        ["Dust"] = "INTEGER NOT NULL DEFAULT 0",
-        ["Shards"] = "INTEGER NOT NULL DEFAULT 0"
+        ["BestLeague"] = "INTEGER NOT NULL DEFAULT 10"
     });
     AddMissingColumns(connection, "CombatMatches", new Dictionary<string, string>
     {
         ["XpA"] = "INTEGER NOT NULL DEFAULT 0", ["XpB"] = "INTEGER NOT NULL DEFAULT 0",
         ["LevelUpA"] = "INTEGER NOT NULL DEFAULT 0", ["LevelUpB"] = "INTEGER NOT NULL DEFAULT 0",
-        ["DustA"] = "INTEGER NOT NULL DEFAULT 0", ["DustB"] = "INTEGER NOT NULL DEFAULT 0",
-        ["ShardsA"] = "INTEGER NOT NULL DEFAULT 0", ["ShardsB"] = "INTEGER NOT NULL DEFAULT 0"
+        ["DropsA"] = "TEXT NOT NULL DEFAULT ''", ["DropsB"] = "TEXT NOT NULL DEFAULT ''"
     });
+    AddMissingColumns(connection, "ForgeRecipes", new Dictionary<string, string> { ["Ingredients"] = "TEXT NOT NULL DEFAULT ''" });
     AddMissingColumns(connection, "FriendChallenges", new Dictionary<string, string> { ["InviteeId"] = "TEXT NULL" });
     AddMissingColumns(connection, "Items", new Dictionary<string, string>
     {
@@ -1398,8 +1395,7 @@ static object CombatDto(CombatMatch match, Guid playerId, string playerName, str
             ratingDelta = isA ? match.RatingDeltaA : match.RatingDeltaB,
             coins = isA ? match.CoinsA : match.CoinsB,
             xp = isA ? match.XpA : match.XpB,
-            dust = isA ? match.DustA : match.DustB,
-            shards = isA ? match.ShardsA : match.ShardsB,
+            drops = Materials.DescribeCached(Materials.Parse(isA ? match.DropsA : match.DropsB)),
             levelUp = LevelUpDto(isA ? match.LevelUpA : match.LevelUpB, isA ? match.XpA : match.XpB),
             turns = Math.Max(1, match.Turn - 1)
         },

@@ -13,7 +13,7 @@ public sealed record AdminItemEdit(
 public sealed record AdminTalismanEdit(string? Name, string? Icon, string? Effect, string? Drawback, int? PriceCoins, bool? Enabled, bool? Ranked, int? SortOrder, string? Rarity = null, int? Budget = null);
 public sealed record AdminAttributeEdit(string? Name, string? Effect, int? Cap);
 public sealed record AdminSettingEdit(string Value);
-public sealed record AdminPlayerEdit(int? Coins, int? Gems, bool? Banned, bool? IsAdmin, int? Dust = null, int? Shards = null);
+public sealed record AdminPlayerEdit(int? Coins, int? Gems, bool? Banned, bool? IsAdmin, Dictionary<string, int>? Materials = null);
 public sealed record AdminAnnouncement(string Subject, string Body);
 
 // Rules and server settings, read from the database. Reloaded when an admin changes a setting,
@@ -29,8 +29,8 @@ public static class LiveConfig
         Server = ContentStore.LoadServerSettings(db);
         Progression.Load(ContentStore.ReadSettings(db));
         Maintenance.Load(ContentStore.ReadSettings(db));
-        Forge.Load(ContentStore.ReadSettings(db));
         TalismanCatalog.Load(db);
+        Materials.Load(db);
     }
 }
 
@@ -247,8 +247,19 @@ public static class AdminEndpoints
                 return Error("self", "You cannot ban yourself or remove your own admin access.", 400);
             if (edit.Coins is not null) { if (edit.Coins < 0) return Error("invalid", "Coins cannot be negative.", 400); target.Coins = edit.Coins.Value; }
             if (edit.Gems is not null) { if (edit.Gems < 0) return Error("invalid", "Gems cannot be negative.", 400); target.Gems = edit.Gems.Value; }
-            if (edit.Dust is not null) { if (edit.Dust < 0) return Error("invalid", "Rune Dust cannot be negative.", 400); target.Dust = edit.Dust.Value; }
-            if (edit.Shards is not null) { if (edit.Shards < 0) return Error("invalid", "Ember Shards cannot be negative.", 400); target.Shards = edit.Shards.Value; }
+            if (edit.Materials is not null)
+            {
+                // Sets each listed material to the given count.
+                var known = await db.Materials.Select(x => x.Key).ToListAsync();
+                foreach (var (key, count) in edit.Materials)
+                {
+                    if (!known.Contains(key)) return Error("invalid", $"Unknown material: {key}.", 400);
+                    if (count < 0) return Error("invalid", "Material counts cannot be negative.", 400);
+                    var row = await db.PlayerMaterials.FindAsync(id, key);
+                    if (row is null) db.PlayerMaterials.Add(new PlayerMaterial { PlayerId = id, MaterialKey = key, Count = count });
+                    else row.Count = count;
+                }
+            }
             if (edit.Banned is not null) target.Banned = edit.Banned.Value;
             if (edit.IsAdmin is not null) target.IsAdmin = edit.IsAdmin.Value;
             if (target.Banned)

@@ -36,9 +36,6 @@ public sealed class Player
     public int WinStreak { get; set; }
     public int BestWinStreak { get; set; }
     public int BestLeague { get; set; } = 10;
-    // Forge materials: Rune Dust (common) and Ember Shards (rare).
-    public int Dust { get; set; }
-    public int Shards { get; set; }
 }
 
 public sealed class MatchQueueEntry
@@ -158,11 +155,9 @@ public sealed class CombatMatch
     public int XpB { get; set; }
     public int LevelUpA { get; set; }
     public int LevelUpB { get; set; }
-    // Forge materials each player got for this duel.
-    public int DustA { get; set; }
-    public int DustB { get; set; }
-    public int ShardsA { get; set; }
-    public int ShardsB { get; set; }
+    // Crafting materials each player got for this duel ("iron-ore:3,bone-shard:2").
+    public string DropsA { get; set; } = "";
+    public string DropsB { get; set; } = "";
     public string UsedRunesA { get; set; } = "";
     public string UsedRunesB { get; set; } = "";
     public string LastLog { get; set; } = "The dice are rolled. Read the table, then declare your state.";
@@ -449,6 +444,8 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
     public DbSet<UploadedFile> UploadedFiles => Set<UploadedFile>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<ForgeRecipe> ForgeRecipes => Set<ForgeRecipe>();
+    public DbSet<MaterialDefinition> Materials => Set<MaterialDefinition>();
+    public DbSet<PlayerMaterial> PlayerMaterials => Set<PlayerMaterial>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -473,6 +470,12 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
         builder.Entity<ForgeRecipe>().Property(x => x.Key).HasMaxLength(64);
         builder.Entity<ForgeRecipe>().Property(x => x.ResultType).HasMaxLength(16);
         builder.Entity<ForgeRecipe>().Property(x => x.ResultKey).HasMaxLength(64);
+        builder.Entity<ForgeRecipe>().Property(x => x.Ingredients).HasMaxLength(400);
+        builder.Entity<MaterialDefinition>().HasKey(x => x.Key);
+        builder.Entity<MaterialDefinition>().Property(x => x.Key).HasMaxLength(64);
+        builder.Entity<MaterialDefinition>().Property(x => x.Rarity).HasMaxLength(16);
+        builder.Entity<PlayerMaterial>().HasKey(x => new { x.PlayerId, x.MaterialKey });
+        builder.Entity<PlayerMaterial>().Property(x => x.MaterialKey).HasMaxLength(64);
         builder.Entity<FriendChallenge>().Property(x => x.Code).HasMaxLength(12);
         builder.Entity<CombatMatch>().HasIndex(x => x.PlayerAId);
         builder.Entity<CombatMatch>().HasIndex(x => x.PlayerBId);

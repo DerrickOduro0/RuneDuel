@@ -146,7 +146,7 @@ public static class ProfileEndpoints
             itemsOwned = await db.PlayerItems.CountAsync(x => x.PlayerId == p.Id),
             talismansOwned = await db.PlayerTalismans.CountAsync(x => x.PlayerId == p.Id),
             equippedTalisman = talismanName,
-            wallet = self ? new { coins = p.Coins, gems = p.Gems, dust = p.Dust, shards = p.Shards } : null,
+            wallet = self ? new { coins = p.Coins, gems = p.Gems, materials = await db.PlayerMaterials.Where(x => x.PlayerId == p.Id).SumAsync(x => x.Count) } : null,
             versus
         };
     }

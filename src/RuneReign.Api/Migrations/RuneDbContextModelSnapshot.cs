@@ -162,11 +162,13 @@ namespace RuneReign.Api.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp without time zone");
 
-                    b.Property<int>("DustA")
-                        .HasColumnType("integer");
+                    b.Property<string>("DropsA")
+                        .IsRequired()
+                        .HasColumnType("text");
 
-                    b.Property<int>("DustB")
-                        .HasColumnType("integer");
+                    b.Property<string>("DropsB")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("FormA")
                         .HasColumnType("text");
@@ -284,12 +286,6 @@ namespace RuneReign.Api.Migrations
 
                     b.Property<string>("ShadeDifficulty")
                         .HasColumnType("text");
-
-                    b.Property<int>("ShardsA")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ShardsB")
-                        .HasColumnType("integer");
 
                     b.Property<int>("ShieldA")
                         .HasColumnType("integer");
@@ -474,11 +470,13 @@ namespace RuneReign.Api.Migrations
                     b.Property<int>("Coins")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Dust")
-                        .HasColumnType("integer");
-
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Ingredients")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
 
                     b.Property<int>("MinLevel")
                         .HasColumnType("integer");
@@ -492,9 +490,6 @@ namespace RuneReign.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
-
-                    b.Property<int>("Shards")
-                        .HasColumnType("integer");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
@@ -791,6 +786,45 @@ namespace RuneReign.Api.Migrations
                     b.ToTable("MatchQueue");
                 });
 
+            modelBuilder.Entity("RuneReign.Api.MaterialDefinition", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Hint")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Icon")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Rarity")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Sources")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("Materials");
+                });
+
             modelBuilder.Entity("RuneReign.Api.Objective", b =>
                 {
                     b.Property<string>("Key")
@@ -891,9 +925,6 @@ namespace RuneReign.Api.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp without time zone");
 
-                    b.Property<int>("Dust")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("text");
@@ -928,9 +959,6 @@ namespace RuneReign.Api.Migrations
                         .HasColumnType("integer");
 
                     b.Property<int>("SeasonWins")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Shards")
                         .HasColumnType("integer");
 
                     b.Property<int>("SkillRating")
@@ -989,6 +1017,23 @@ namespace RuneReign.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("PlayerItems");
+                });
+
+            modelBuilder.Entity("RuneReign.Api.PlayerMaterial", b =>
+                {
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MaterialKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("integer");
+
+                    b.HasKey("PlayerId", "MaterialKey");
+
+                    b.ToTable("PlayerMaterials");
                 });
 
             modelBuilder.Entity("RuneReign.Api.PlayerMessage", b =>
