@@ -1,0 +1,459 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using RuneReign.Api;
+using RuneReign.Domain;
+
+var builder = WebApplication.CreateBuilder(args);
+var rules = JsonSerializer.Deserialize<GameRules>(
+    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "GameRules.json")),
+    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidOperationException("GameRules.json is invalid.");
+
+var connection = builder.Configuration.GetConnectionString("MySql");
+var sqliteConnection = builder.Configuration.GetConnectionString("Sqlite") ?? "Data Source=runereign.db";
+if (!string.IsNullOrWhiteSpace(connection))
+{
+    builder.Services.AddDbContext<RuneDbContext>(options => options.UseMySql(connection, ServerVersion.AutoDetect(connection)));
+}
+else
+{
+    builder.Services.AddDbContext<RuneDbContext>(options => options.UseSqlite(sqliteConnection));
+}
+
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "development-only-change-this-jwt-key-32-chars";
+builder.Services.AddSingleton(rules);
+builder.Services.AddSingleton<IPasswordHasher<Player>, PasswordHasher<Player>>();
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ClockSkew = TimeSpan.FromMinutes(1)
+    };
+});
+builder.Services.AddAuthorization();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services.AddHostedService<WheelWorker>();
+
+var app = builder.Build();
+app.UseSwagger();
+app.UseSwaggerUI();
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
+if (!string.IsNullOrWhiteSpace(connection))
+{
+    using var migrationScope = app.Services.CreateScope();
+    migrationScope.ServiceProvider.GetRequiredService<RuneDbContext>().Database.Migrate();
+}
+else
+{
+    using var developmentScope = app.Services.CreateScope();
+    var developmentDb = developmentScope.ServiceProvider.GetRequiredService<RuneDbContext>();
+    developmentDb.Database.EnsureCreated();
+    EnsureSqliteSchema(developmentDb);
+}
+
+app.MapGet("/api/v1/classes", (GameRules r) => Results.Ok(r.Classes));
+
+app.MapPost("/api/v1/auth/register", async (RegisterRequest request, RuneDbContext db, IPasswordHasher<Player> hasher) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        return ApiError("validation_error", "Username, email, and password are required.", 400);
+    if (request.Password.Length < 8)
+        return ApiError("validation_error", "Password must be at least 8 characters.", 400);
+    if (await db.Players.AnyAsync(x => x.Username == request.Username.Trim() || x.Email == request.Email.Trim().ToLowerInvariant()))
+        return ApiError("account_exists", "Username or email is already in use.", 409);
+
+    var player = new Player { Id = Guid.NewGuid(), Username = request.Username.Trim(), Email = request.Email.Trim().ToLowerInvariant(), PasswordHash = "" };
+    player.PasswordHash = hasher.HashPassword(player, request.Password);
+    db.Players.Add(player);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { token = CreateToken(player, jwtKey), needsClass = true });
+});
+
+app.MapPost("/api/v1/auth/login", async (LoginRequest request, RuneDbContext db, IPasswordHasher<Player> hasher) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Identifier) || string.IsNullOrWhiteSpace(request.Password))
+        return ApiError("validation_error", "Username/email and password are required.", 400);
+    var identifier = request.Identifier.Trim().ToLowerInvariant();
+    var player = await db.Players.FirstOrDefaultAsync(x => x.Email == identifier || x.Username.ToLower() == identifier);
+    if (player is null)
+        return ApiError("unknown_account", "No account matches those details.", 401);
+    if (hasher.VerifyHashedPassword(player, player.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
+        return ApiError("wrong_password", "The password is incorrect.", 401);
+    return Results.Ok(new { token = CreateToken(player, jwtKey), needsClass = player.ClassName is null });
+});
+
+app.MapGet("/api/v1/me", async (ClaimsPrincipal user, RuneDbContext db, GameRules r) =>
+{
+    var player = await CurrentPlayer(user, db);
+    return player is null ? ApiError("not_found", "Player not found.", 404) : Results.Ok(PlayerDto(player, r));
+}).RequireAuthorization();
+
+app.MapPut("/api/v1/me/class", async (ChooseClassRequest request, ClaimsPrincipal user, RuneDbContext db, GameRules r) =>
+{
+    var player = await CurrentPlayer(user, db);
+    if (player is null) return ApiError("not_found", "Player not found.", 404);
+    if (player.ClassName is not null) return ApiError("class_locked", "Class selection is already complete.", 409);
+    if (r.Classes.All(x => x.Name != request.ClassName)) return ApiError("invalid_class", "Choose one of the listed classes.", 400);
+    player.ClassName = request.ClassName;
+    await db.SaveChangesAsync();
+    return Results.Ok(PlayerDto(player, r));
+}).RequireAuthorization();
+
+app.MapGet("/api/v1/league", async (RuneDbContext db, GameRules r) =>
+{
+    var players = await db.Players.OrderBy(x => x.League).ThenByDescending(x => x.Points).ThenBy(x => x.Username).Take(100).ToListAsync();
+    return Results.Ok(new { leagues = r.Leagues, leaderboard = players.Select(x => new { x.Username, x.ClassName, x.League, leagueName = r.Leagues.First(l => l.Number == x.League).Name, x.Points }), hallOfFame = await db.HallOfFame.OrderByDescending(x => x.CrownedAtUtc).ToListAsync() });
+});
+
+app.MapPost("/api/v1/matchmaking/queue", async (ClaimsPrincipal user, RuneDbContext db, GameRules r) =>
+{
+    var player = await CurrentPlayer(user, db);
+    if (player is null || player.ClassName is null) return ApiError("class_required", "Choose a class before matchmaking.", 400);
+    await RemoveExpiredQueueEntries(db, r);
+    var existing = await db.MatchQueue.FirstOrDefaultAsync(x => x.PlayerId == player.Id && !x.Matched);
+    if (existing is not null)
+    {
+        existing.LastHeartbeatUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        await TryMatch(db, r);
+        return Results.Ok(new { queued = true, status = "searching" });
+    }
+
+    var now = DateTime.UtcNow;
+    var entry = new MatchQueueEntry { Id = Guid.NewGuid(), PlayerId = player.Id, JoinedAtUtc = now, LastHeartbeatUtc = now };
+    db.MatchQueue.Add(entry);
+    await db.SaveChangesAsync();
+    await TryMatch(db, r);
+    return Results.Ok(new { queued = true, status = "searching" });
+}).RequireAuthorization();
+
+app.MapGet("/api/v1/matchmaking/status", async (ClaimsPrincipal user, RuneDbContext db, GameRules r) =>
+{
+    var player = await CurrentPlayer(user, db);
+    if (player is null) return ApiError("not_found", "Player not found.", 404);
+    await RemoveExpiredQueueEntries(db, r);
+    var entry = await db.MatchQueue.FirstOrDefaultAsync(x => x.PlayerId == player.Id && !x.Matched);
+    if (entry is not null)
+    {
+        entry.LastHeartbeatUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        await TryMatch(db, r);
+    }
+
+    var match = await db.MatchQueue.FirstOrDefaultAsync(x => x.PlayerId == player.Id && x.Matched);
+    if (match?.OpponentId is Guid opponentId)
+    {
+        match.LastHeartbeatUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        var pairedEntry = match.CombatMatchId is Guid combatMatchId
+            ? await db.MatchQueue.FirstOrDefaultAsync(x => x.CombatMatchId == combatMatchId && x.PlayerId == opponentId && x.Matched)
+            : null;
+        if (pairedEntry is null || (pairedEntry.LastHeartbeatUtc ?? pairedEntry.JoinedAtUtc) < DateTime.UtcNow.AddSeconds(-r.QueueTimeoutSeconds))
+        {
+            if (match.CombatMatchId is Guid staleCombatMatchId)
+                await db.MatchQueue.Where(x => x.CombatMatchId == staleCombatMatchId).ExecuteDeleteAsync();
+            else
+                db.MatchQueue.Remove(match);
+            await db.SaveChangesAsync();
+            return Results.Ok(new { status = "idle", matchId = (Guid?)null, opponent = (object?)null });
+        }
+
+        var opponent = await db.Players.FindAsync(opponentId);
+        return Results.Ok(new { status = "found", matchId = match.CombatMatchId, opponent = opponent is null ? null : new { opponent.Username, opponent.ClassName, opponent.League } });
+    }
+    return Results.Ok(new { status = entry is null ? "idle" : "searching", matchId = (Guid?)null, opponent = (object?)null });
+}).RequireAuthorization();
+
+app.MapDelete("/api/v1/matchmaking/queue", async (ClaimsPrincipal user, RuneDbContext db) =>
+{
+    var player = await CurrentPlayer(user, db);
+    if (player is not null)
+    {
+        var combatIds = await db.MatchQueue
+            .Where(x => x.PlayerId == player.Id && x.Matched && x.CombatMatchId != null)
+            .Select(x => x.CombatMatchId!.Value)
+            .ToListAsync();
+        await db.MatchQueue.Where(x => x.PlayerId == player.Id).ExecuteDeleteAsync();
+        if (combatIds.Count > 0)
+            await db.MatchQueue.Where(x => x.CombatMatchId != null && combatIds.Contains(x.CombatMatchId.Value)).ExecuteDeleteAsync();
+    }
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapGet("/api/v1/combat/{matchId:guid}", async (Guid matchId, ClaimsPrincipal user, RuneDbContext db, GameRules rules) =>
+{
+    var player = await CurrentPlayer(user, db);
+    var match = await db.CombatMatches.FindAsync(matchId);
+    if (player is null || match is null || (match.PlayerAId != player.Id && match.PlayerBId != player.Id))
+        return ApiError("not_found", "Combat match not found.", 404);
+    var opponent = await db.Players.FindAsync(match.PlayerAId == player.Id ? match.PlayerBId : match.PlayerAId);
+    return Results.Ok(CombatDto(match, player.Id, player.Username, opponent?.Username ?? "Opponent", rules));
+}).RequireAuthorization();
+
+app.MapPost("/api/v1/combat/{matchId:guid}/action", async (CombatActionRequest request, Guid matchId, ClaimsPrincipal user, RuneDbContext db, GameRules rules) =>
+{
+    var player = await CurrentPlayer(user, db);
+    var match = await db.CombatMatches.FindAsync(matchId);
+    if (player is null || match is null || (match.PlayerAId != player.Id && match.PlayerBId != player.Id))
+        return ApiError("not_found", "Combat match not found.", 404);
+    if (match.CompletedAtUtc is not null) return ApiError("match_complete", "This combat match is already complete.", 409);
+    if (!new[] { "Break", "Flow", "Bind" }.Contains(request.State)) return ApiError("invalid_state", "Choose Break, Flow, or Bind.", 400);
+    if (match.PlayerAId == player.Id) match.PendingA = request.State; else match.PendingB = request.State;
+    if (match.PendingA is not null && match.PendingB is not null)
+    {
+        var a = CombatEngine.Roll(match.ClassA, match.PendingA);
+        var b = CombatEngine.Roll(match.ClassB, match.PendingB);
+        var result = CombatEngine.Resolve(match.ClassA, a, new CombatPlayerState(match.HpA, match.ShieldA, match.ManaA), match.ClassB, b, new CombatPlayerState(match.HpB, match.ShieldB, match.ManaB));
+        match.HpA = result.PlayerA.Hp; match.ShieldA = result.PlayerA.Shield; match.ManaA = result.PlayerA.Mana;
+        match.HpB = result.PlayerB.Hp; match.ShieldB = result.PlayerB.Shield; match.ManaB = result.PlayerB.Mana;
+        match.LastRollA = JsonSerializer.Serialize(new { a.Rune, Symbol = CombatEngine.GetRuneSymbol(a.Rune), a.Form, a.State });
+        match.LastRollB = JsonSerializer.Serialize(new { b.Rune, Symbol = CombatEngine.GetRuneSymbol(b.Rune), b.Form, b.State });
+        match.LastLog = result.Log; match.Turn++;
+        match.PendingA = null; match.PendingB = null;
+        if (result.Winner is not null || result.IsDraw)
+        {
+            match.WinnerId = result.Winner is null ? null : result.Winner == "A" ? match.PlayerAId : match.PlayerBId;
+            match.IsDraw = result.IsDraw;
+            match.CompletedAtUtc = DateTime.UtcNow;
+            if (!match.ResultsApplied && !result.IsDraw)
+            {
+                var playerA = await db.Players.FindAsync(match.PlayerAId);
+                var playerB = await db.Players.FindAsync(match.PlayerBId);
+                if (playerA is not null && playerB is not null)
+                {
+                    var nextA = LeagueEngine.RecordResult(new LeagueState(playerA.League, playerA.Points, playerA.SeasonWins), result.Winner == "A", rules);
+                    var nextB = LeagueEngine.RecordResult(new LeagueState(playerB.League, playerB.Points, playerB.SeasonWins), result.Winner == "B", rules);
+                    playerA.League = nextA.League; playerA.Points = nextA.Points; playerA.SeasonWins = nextA.SeasonWins; playerA.SeasonMatches++;
+                    playerB.League = nextB.League; playerB.Points = nextB.Points; playerB.SeasonWins = nextB.SeasonWins; playerB.SeasonMatches++;
+                    match.ResultsApplied = true;
+                }
+                await db.MatchQueue.Where(x => x.CombatMatchId == match.Id).ExecuteDeleteAsync();
+            }
+        }
+    }
+    await db.SaveChangesAsync();
+    var opponent = await db.Players.FindAsync(match.PlayerAId == player.Id ? match.PlayerBId : match.PlayerAId);
+    return Results.Ok(CombatDto(match, player.Id, player.Username, opponent?.Username ?? "Opponent", rules));
+}).RequireAuthorization();
+
+app.MapPost("/api/v1/combat/{matchId:guid}/give-up", async (Guid matchId, ClaimsPrincipal user, RuneDbContext db, GameRules rules) =>
+{
+    var player = await CurrentPlayer(user, db);
+    var match = await db.CombatMatches.FindAsync(matchId);
+    if (player is null || match is null || (match.PlayerAId != player.Id && match.PlayerBId != player.Id))
+        return ApiError("not_found", "Combat match not found.", 404);
+    if (match.CompletedAtUtc is not null)
+        return ApiError("match_complete", "This combat match is already complete.", 409);
+
+    var opponentId = match.PlayerAId == player.Id ? match.PlayerBId : match.PlayerAId;
+    match.WinnerId = opponentId;
+    match.LastLog = $"{player.Username} gave up. {match.ClassA} vs {match.ClassB} is complete.";
+    match.CompletedAtUtc = DateTime.UtcNow;
+
+    if (!match.ResultsApplied)
+    {
+        var playerA = await db.Players.FindAsync(match.PlayerAId);
+        var playerB = await db.Players.FindAsync(match.PlayerBId);
+        if (playerA is not null && playerB is not null)
+        {
+            var nextA = LeagueEngine.RecordResult(new LeagueState(playerA.League, playerA.Points, playerA.SeasonWins), opponentId == match.PlayerAId, rules);
+            var nextB = LeagueEngine.RecordResult(new LeagueState(playerB.League, playerB.Points, playerB.SeasonWins), opponentId == match.PlayerBId, rules);
+            playerA.League = nextA.League; playerA.Points = nextA.Points; playerA.SeasonWins = nextA.SeasonWins; playerA.SeasonMatches++;
+            playerB.League = nextB.League; playerB.Points = nextB.Points; playerB.SeasonWins = nextB.SeasonWins; playerB.SeasonMatches++;
+            match.ResultsApplied = true;
+        }
+    }
+
+    await db.MatchQueue.Where(x => x.CombatMatchId == match.Id).ExecuteDeleteAsync();
+    await db.SaveChangesAsync();
+    var opponent = await db.Players.FindAsync(opponentId);
+    return Results.Ok(CombatDto(match, player.Id, player.Username, opponent?.Username ?? "Opponent", rules));
+}).RequireAuthorization();
+
+app.MapPost("/api/v1/test/results", async (TestResultRequest request, ClaimsPrincipal user, RuneDbContext db, GameRules r, IWebHostEnvironment env) =>
+{
+    if (env.IsProduction()) return ApiError("disabled", "Test endpoints are disabled in production.", 404);
+    var player = await CurrentPlayer(user, db);
+    if (player is null || request.Win is null) return ApiError("validation_error", "Provide win: true or false.", 400);
+    var next = LeagueEngine.RecordResult(new LeagueState(player.League, player.Points, player.SeasonWins), request.Win.Value, r);
+    player.League = next.League; player.Points = next.Points; player.SeasonWins = next.SeasonWins; player.SeasonMatches++;
+    await db.SaveChangesAsync();
+    return Results.Ok(PlayerDto(player, r));
+}).RequireAuthorization();
+
+app.MapPost("/api/v1/test/wheel", async (RuneDbContext db, GameRules r, IWebHostEnvironment env) =>
+{
+    if (env.IsProduction()) return ApiError("disabled", "Test endpoints are disabled in production.", 404);
+    await WheelWorker.Turn(db, r, DateTime.UtcNow.ToString("yyyy-MM"));
+    return Results.Ok(new { status = "completed" });
+}).RequireAuthorization();
+
+app.Run();
+
+static IResult ApiError(string code, string message, int status) => Results.Json(new { error = new { code, message } }, statusCode: status);
+static async Task<Player?> CurrentPlayer(ClaimsPrincipal user, RuneDbContext db) => Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? await db.Players.FindAsync(id) : null;
+static object PlayerDto(Player p, GameRules r) => new { p.Username, p.Email, p.ClassName, p.League, leagueName = r.Leagues.First(x => x.Number == p.League).Name, p.Points, pointsPerLeague = r.PointsPerLeague, p.SeasonMatches };
+static void EnsureSqliteSchema(RuneDbContext db)
+{
+    using var connection = db.Database.GetDbConnection();
+    connection.Open();
+    using var columnsCommand = connection.CreateCommand();
+    columnsCommand.CommandText = "PRAGMA table_info('CombatMatches')";
+    using var reader = columnsCommand.ExecuteReader();
+    var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    while (reader.Read())
+        columns.Add(reader.GetString(1));
+    reader.Close();
+
+    if (!columns.Contains("IsDraw"))
+    {
+        using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = "ALTER TABLE CombatMatches ADD COLUMN IsDraw INTEGER NOT NULL DEFAULT 0";
+        alterCommand.ExecuteNonQuery();
+    }
+
+    using var queueColumnsCommand = connection.CreateCommand();
+    queueColumnsCommand.CommandText = "PRAGMA table_info('MatchQueue')";
+    using var queueReader = queueColumnsCommand.ExecuteReader();
+    var queueColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    while (queueReader.Read())
+        queueColumns.Add(queueReader.GetString(1));
+    queueReader.Close();
+
+    if (!queueColumns.Contains("LastHeartbeatUtc"))
+    {
+        using var queueAlterCommand = connection.CreateCommand();
+        queueAlterCommand.CommandText = "ALTER TABLE MatchQueue ADD COLUMN LastHeartbeatUtc TEXT NULL";
+        queueAlterCommand.ExecuteNonQuery();
+    }
+}
+
+static async Task RemoveCompletedMatchQueueEntries(RuneDbContext db)
+{
+    var matchedEntries = await db.MatchQueue.Where(x => x.Matched && x.CombatMatchId != null).ToListAsync();
+    if (matchedEntries.Count == 0) return;
+
+    var combatIds = matchedEntries.Select(x => x.CombatMatchId!.Value).Distinct().ToList();
+    var completedCombatIds = await db.CombatMatches
+        .Where(x => combatIds.Contains(x.Id) && x.CompletedAtUtc != null)
+        .Select(x => x.Id)
+        .ToListAsync();
+    if (completedCombatIds.Count > 0)
+        await db.MatchQueue.Where(x => x.CombatMatchId != null && completedCombatIds.Contains(x.CombatMatchId.Value)).ExecuteDeleteAsync();
+}
+
+static async Task RemoveExpiredQueueEntries(RuneDbContext db, GameRules rules)
+{
+    await RemoveCompletedMatchQueueEntries(db);
+    var cutoff = DateTime.UtcNow.AddSeconds(-rules.QueueTimeoutSeconds);
+    var expiredCombatIds = await db.MatchQueue
+        .Where(x => x.Matched && x.CombatMatchId != null && (x.LastHeartbeatUtc ?? x.JoinedAtUtc) < cutoff)
+        .Select(x => x.CombatMatchId!.Value)
+        .Distinct()
+        .ToListAsync();
+    if (expiredCombatIds.Count > 0)
+        await db.MatchQueue.Where(x => x.CombatMatchId != null && expiredCombatIds.Contains(x.CombatMatchId.Value)).ExecuteDeleteAsync();
+
+    await db.MatchQueue
+        .Where(x => !x.Matched && (x.LastHeartbeatUtc ?? x.JoinedAtUtc) < cutoff)
+        .ExecuteDeleteAsync();
+}
+
+static object CombatDto(CombatMatch match, Guid playerId, string playerName, string opponentName, GameRules rules)
+{
+    var isA = match.PlayerAId == playerId;
+    var myClass = isA ? match.ClassA : match.ClassB;
+    var opponentClass = isA ? match.ClassB : match.ClassA;
+    return new
+    {
+        matchId = match.Id, turn = match.Turn, playerName, opponent = opponentName,
+        myClass, myCoreRule = rules.Classes.FirstOrDefault(x => x.Name == myClass)?.CoreRule,
+        opponentClass, opponentCoreRule = rules.Classes.FirstOrDefault(x => x.Name == opponentClass)?.CoreRule,
+        status = match.CompletedAtUtc is null ? "active" : "finished",
+        myHp = isA ? match.HpA : match.HpB, myShield = isA ? match.ShieldA : match.ShieldB, myMana = isA ? match.ManaA : match.ManaB,
+        opponentHp = isA ? match.HpB : match.HpA, opponentShield = isA ? match.ShieldB : match.ShieldA, opponentMana = isA ? match.ManaB : match.ManaA,
+        waitingForOpponent = isA ? match.PendingA is not null : match.PendingB is not null,
+        winner = match.WinnerId is null ? null : match.WinnerId == playerId ? "me" : "opponent",
+        draw = match.IsDraw,
+        completedAtUtc = match.CompletedAtUtc,
+        log = match.LastLog, lastRoll = JsonSerializer.Deserialize<object>(isA ? match.LastRollA ?? "null" : match.LastRollB ?? "null"),
+        opponentRoll = JsonSerializer.Deserialize<object>(isA ? match.LastRollB ?? "null" : match.LastRollA ?? "null"),
+        states = new[] { "Break", "Flow", "Bind" }
+    };
+}
+static string CreateToken(Player player, string key)
+{
+    var token = new JwtSecurityToken(claims: [new Claim(ClaimTypes.NameIdentifier, player.Id.ToString()), new Claim(ClaimTypes.Name, player.Username)], expires: DateTime.UtcNow.AddHours(12), signingCredentials: new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256));
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}
+
+static async Task TryMatch(RuneDbContext db, GameRules rules)
+{
+    var cutoff = DateTime.UtcNow.AddSeconds(-rules.QueueTimeoutSeconds);
+    var waiting = await db.MatchQueue
+        .Where(x => !x.Matched && (x.LastHeartbeatUtc ?? x.JoinedAtUtc) >= cutoff)
+        .OrderBy(x => x.JoinedAtUtc)
+        .ToListAsync();
+    foreach (var first in waiting)
+    {
+        var p1 = await db.Players.FindAsync(first.PlayerId);
+        if (p1 is null) continue;
+        var candidates = new List<(MatchQueueEntry Entry, Player Player, int RatingGap)>();
+        foreach (var candidateEntry in waiting.Where(x => x.Id != first.Id))
+        {
+            var candidate = await db.Players.FindAsync(candidateEntry.PlayerId);
+            if (candidate is null || candidate.ClassName is null) continue;
+
+            var firstProtected = p1.SeasonMatches < rules.ProtectedBracketMatches;
+            var candidateProtected = candidate.SeasonMatches < rules.ProtectedBracketMatches;
+            var oldestWait = Math.Max(
+                (DateTime.UtcNow - first.JoinedAtUtc).TotalSeconds,
+                (DateTime.UtcNow - candidateEntry.JoinedAtUtc).TotalSeconds);
+            var protectedBracketAllowed = firstProtected == candidateProtected
+                || (!firstProtected && !candidateProtected)
+                || oldestWait >= rules.ProtectedBracketMaxWaitSeconds;
+            if (!protectedBracketAllowed) continue;
+
+            var waitSeconds = (int)Math.Max(0, oldestWait);
+            var gap = Math.Min(
+                rules.MaximumMatchmakingGap,
+                rules.InitialMatchmakingGap + waitSeconds / rules.MatchmakingGapExpansionSeconds * rules.InitialMatchmakingGap);
+            var ratingGap = Math.Abs(p1.SkillRating - candidate.SkillRating);
+            if (ratingGap <= gap)
+                candidates.Add((candidateEntry, candidate, ratingGap));
+        }
+
+        var best = candidates
+            .OrderBy(x => x.RatingGap)
+            .ThenBy(x => x.Entry.JoinedAtUtc)
+            .FirstOrDefault();
+        if (best.Player is not null)
+        {
+            first.Matched = true; first.OpponentId = best.Player.Id;
+            best.Entry.Matched = true; best.Entry.OpponentId = p1.Id;
+            var combat = new CombatMatch
+            {
+                Id = Guid.NewGuid(), PlayerAId = p1.Id, PlayerBId = best.Player.Id,
+                ClassA = p1.ClassName!,                 ClassB = best.Player.ClassName!
+            };
+            db.CombatMatches.Add(combat);
+            first.CombatMatchId = combat.Id;
+            best.Entry.CombatMatchId = combat.Id;
+            await db.SaveChangesAsync();
+            return;
+        }
+    }
+}

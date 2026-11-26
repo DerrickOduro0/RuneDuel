@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rune Duel</title><link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header><h1>Rune Duel</h1><p class="sub">Climb the ladder. Master your class.</p></header>
+    <div id="message" role="alert"></div>
+    <section id="auth" class="panel">
+      <div class="tabs"><button id="loginTab" class="active">Log in</button><button id="registerTab">Create account</button></div>
+      <form id="loginForm"><label>Username or email<input id="loginIdentifier" required></label><label>Password<input id="loginPassword" type="password" required></label><button>Log in</button></form>
+      <form id="registerForm" hidden><label>Username<input id="username" required></label><label>Email<input id="email" type="email" required></label><label>Password (8+ characters)<input id="password" type="password" minlength="8" required></label><button>Create account</button></form>
+    </section>
+    <section id="classes" class="panel" hidden><h2>Choose your class</h2><p>Your class cannot be changed later.</p><div id="classCards" class="cards"></div></section>
+    <section id="home" class="panel" hidden><div class="toolbar"><h2>Home</h2><button id="logout" class="secondary">Log out</button></div><div id="profile"></div><div class="actions"><button id="findMatch">Find a match</button><button id="showLeague" class="secondary">League</button></div></section>
+    <section id="match" class="panel" hidden><h2>Matchmaking</h2><div id="matchStatus"></div><button id="cancelMatch" class="secondary">Cancel</button></section>
+    <section id="league" class="panel" hidden><div class="toolbar"><h2>League</h2><button id="backHome" class="secondary">Home</button></div><div id="leagueContent"></div></section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+
+# Front end
+node_modules/
+.next/
+
+# Local development database
+*.db
+*.db-shm
+*.db-wal
+
+# Old safety copies
+backup-before-*/
+
+# Editor files
+.vs/
+.vscode/
+*.user

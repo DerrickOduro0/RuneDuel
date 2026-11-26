@@ -1,0 +1,32 @@
+{
+  "WinPoints": 20,
+  "LossPoints": -10,
+  "DoubleWinCount": 3,
+  "ProtectedBracketMatches": 20,
+  "DefaultSkillRating": 1000,
+  "MinimumChampionMatches": 30,
+  "PointsPerLeague": 100,
+  "InitialMatchmakingGap": 100,
+  "MaximumMatchmakingGap": 1000,
+  "MatchmakingGapExpansionSeconds": 10,
+  "QueueTimeoutSeconds": 15,
+  "ProtectedBracketMaxWaitSeconds": 60,
+  "Leagues": [
+    { "Number": 1, "Name": "Archmage" },
+    { "Number": 2, "Name": "Grand Magus" },
+    { "Number": 3, "Name": "Spellbinder" },
+    { "Number": 4, "Name": "Runelord" },
+    { "Number": 5, "Name": "Warden" },
+    { "Number": 6, "Name": "Invoker" },
+    { "Number": 7, "Name": "Adept" },
+    { "Number": 8, "Name": "Acolyte" },
+    { "Number": 9, "Name": "Initiate" },
+    { "Number": 10, "Name": "Apprentice" }
+  ],
+  "Classes": [
+    { "Name": "Flamecaller", "Playstyle": "Risk and power", "CoreRule": "Every re-roll costs 1 HP", "Runes": [{ "Name": "Kenaz", "Meaning": "torch", "Symbol": "ᚲ" }, { "Name": "Sowilo", "Meaning": "sun", "Symbol": "ᛊ" }, { "Name": "Nauthiz", "Meaning": "need-fire", "Symbol": "ᚾ" }, { "Name": "Thurisaz", "Meaning": "giant's thorn", "Symbol": "ᚦ" }, { "Name": "Hagalaz", "Meaning": "hail, destruction", "Symbol": "ᚺ" }, { "Name": "Dagaz", "Meaning": "dawn, breakthrough", "Symbol": "ᛞ" }] },
+    { "Name": "Frostwarden", "Playstyle": "Defense and patience", "CoreRule": "Unspent shield carries over (max 8)", "Runes": [{ "Name": "Isa", "Meaning": "ice", "Symbol": "ᛁ" }, { "Name": "Algiz", "Meaning": "protection", "Symbol": "ᛉ" }, { "Name": "Uruz", "Meaning": "raw strength", "Symbol": "ᚢ" }, { "Name": "Othala", "Meaning": "home", "Symbol": "ᛟ" }, { "Name": "Berkano", "Meaning": "growth", "Symbol": "ᛒ" }, { "Name": "Laguz", "Meaning": "water", "Symbol": "ᛚ" }] },
+    { "Name": "Fateweaver", "Playstyle": "Control", "CoreRule": "Once per turn, move your D8 up or down by 1", "Runes": [{ "Name": "Perthro", "Meaning": "fate, cast lots", "Symbol": "ᛈ" }, { "Name": "Ansuz", "Meaning": "divine word", "Symbol": "ᚨ" }, { "Name": "Tiwaz", "Meaning": "justice", "Symbol": "ᛏ" }, { "Name": "Mannaz", "Meaning": "the mind", "Symbol": "ᛗ" }, { "Name": "Gebo", "Meaning": "gift, exchange", "Symbol": "ᚷ" }, { "Name": "Fehu", "Meaning": "wealth", "Symbol": "ᚠ" }] },
+    { "Name": "Gravebound", "Playstyle": "Comeback", "CoreRule": "Last Stand: below half HP, all spells get +2", "Runes": [{ "Name": "Eihwaz", "Meaning": "yew, death and rebirth", "Symbol": "ᛇ" }, { "Name": "Jera", "Meaning": "harvest", "Symbol": "ᛃ" }, { "Name": "Ingwaz", "Meaning": "seed", "Symbol": "ᛜ" }, { "Name": "Raidho", "Meaning": "the road", "Symbol": "ᚱ" }, { "Name": "Ehwaz", "Meaning": "the horse, carrying on", "Symbol": "ᛖ" }, { "Name": "Wunjo", "Meaning": "joy, last laugh", "Symbol": "ᚹ" }] }
+  ]
+}

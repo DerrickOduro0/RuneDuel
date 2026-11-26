@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rune Duel: all 192 combinations</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎲</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef0ea;--ink:#1d2320;--mute:#5d675f;--acc:#5b3fd0;--line:#cfd5cb;--cell:#fafbf8;--hit:#e4dcff;
+box-sizing:border-box;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121614;--ink:#e6ebe4;--mute:#97a39a;--acc:#a894ff;--line:#2a322d;--cell:#1a201d;--hit:#2c2750;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121614;--ink:#e6ebe4;--mute:#97a39a;--acc:#a894ff;--line:#2a322d;--cell:#1a201d;--hit:#2c2750;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.5 "Spectral",Georgia,serif;padding:20px 14px 40px;max-width:900px;margin-inline:auto}
+h1{font-size:1.6rem;line-height:1.15;margin:0 0 4px;font-weight:800}
+.sub{color:var(--mute);margin:0 0 16px;font-size:.95rem}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.tabs button{font:inherit;font-weight:600;padding:7px 12px;border:1px solid var(--line);background:var(--cell);color:var(--ink);border-radius:8px;cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--acc);border-color:var(--acc);color:var(--bg)}
+button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.rule{margin:0 0 12px;font-size:.95rem}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--cell)}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;text-align:center}
+th{font-weight:600;font-size:.82rem;padding:8px 4px;background:var(--bg)}
+th.r{text-align:left;padding:8px 10px;position:sticky;left:0;background:var(--bg);min-width:96px;z-index:1}
+th.r small{display:block;color:var(--mute);font-weight:400;font-size:.72rem}
+td button{all:unset;display:block;width:100%;padding:8px 2px;cursor:pointer;min-height:48px}
+td button:focus-visible{outline:3px solid var(--acc);outline-offset:-3px}
+td.on{background:var(--hit)}
+.d{font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums}
+.c{display:block;font-size:.7rem;color:var(--mute);line-height:1.2}
+#detail{margin-top:14px;border:1px solid var(--line);border-radius:10px;background:var(--cell);padding:14px 16px}
+#detail h2{margin:0 0 6px;font-size:1.2rem}
+#detail p{margin:4px 0}
+.k{color:var(--mute)}
+.forms{margin-top:18px;font-size:.9rem}
+.forms dt{font-weight:600;float:left;clear:left;width:4.5rem}
+.forms dd{margin:0 0 2px 4.5rem}
+#sim{margin-top:22px}#sim h2{font-size:1.2rem;margin:0 0 4px}.tri{color:var(--mute);margin:0 0 10px;font-size:.95rem}.pls{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media (max-width:520px){.pls{grid-template-columns:1fr}}.pl{border:1px solid var(--line);border-radius:10px;background:var(--cell);padding:10px 12px}.pl h3{margin:0 0 6px;font-size:1rem}.pl label{display:block;font-size:.8rem;color:var(--mute);margin-top:6px}select{font:inherit;width:100%;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}#simout{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--cell);padding:12px 16px}#simout p{margin:4px 0}
+</style>
+</head>
+<body>
+<h1>Rune Duel: every combination</h1>
+<p class="sub">Class die (D6, rows) meets the shared Form die (D8, columns). Balanced rules: no spell deals more than 12 and shields cap at 8. Tap any cell for the full result.</p>
+<div class="tabs" id="tabs" role="group" aria-label="Class"></div>
+<p class="rule" id="rule"></p>
+<div class="wrap"><table id="grid"></table></div>
+<section id="detail" aria-live="polite"></section>
+<section id="sim"><h2>Matchup simulator</h2><p class="tri">Break beats Flow, Flow beats Bind, Bind beats Break. Both mages declare a state in secret. The winner gets +2 only if their D8 form matches the declared state; the loser’s spell gets −1.</p><div class="pls" id="simctl"></div><div id="simout" aria-live="polite"></div></section>
+<dl class="forms" id="forms"></dl>
+<script>
+var FORMS=[
+["Bolt","+2 damage"],["Wave","−1 damage, ignores shield"],["Ward","damage becomes shield (minimum 2)"],["Drain","−1 damage, heal what you deal"],
+["Curse","+1 damage"],["Surge","no direct effect"],["Echo","no direct effect"],["Nova","+4 damage, you take 3"]];
+// rune: [name, meaning, hit, selfDmg, heal, shield, mana, note]
+var CLASSES=[
+{n:"Flamecaller",rule:"Core rule: every re-roll costs you 1 HP.",r:[
+["Kenaz","torch",4,0,0,0,0,"Burn: 1 damage for 2 turns."],
+["Sowilo","sun",4,0,2,0,0,""],
+["Nauthiz","need-fire",3,0,0,0,0,"Your next re-roll is free."],
+["Thurisaz","giant’s thorn",6,1,0,0,0,""],
+["Hagalaz","hail, destruction",7,2,0,0,0,""],
+["Dagaz","dawn, breakthrough",8,2,0,0,0,""]]},
+{n:"Frostwarden",rule:"Core rule: unspent shield carries over (max 8).",r:[
+["Isa","ice",3,0,0,0,0,"Enemy loses a re-roll."],
+["Algiz","protection",0,0,0,5,0,""],
+["Uruz","raw strength",5,0,0,0,0,""],
+["Othala","home",0,0,2,3,0,""],
+["Berkano","growth",0,0,4,0,0,""],
+["Laguz","water",0,0,0,0,0,"Hit for half your current shield (minimum 3)."]]},
+{n:"Fateweaver",rule:"Core rule: once per turn, move your D8 up or down by 1.",r:[
+["Perthro","fate, cast lots",2,0,0,0,0,"Enemy must re-roll their next D6."],
+["Ansuz","divine word",3,0,0,0,0,"Choose your next D8 face."],
+["Tiwaz","justice",4,0,0,0,0,"+3 damage if the enemy has more HP than you."],
+["Mannaz","the mind",0,0,0,0,0,"Copy the enemy’s last rune."],
+["Gebo","gift, exchange",3,0,0,0,0,"Pass one of your debuffs to the enemy."],
+["Fehu","wealth",2,0,0,0,2,""]]},
+{n:"Gravebound",rule:"Core rule: Last Stand. Below half HP, all your spells get +2.",r:[
+["Eihwaz","yew, death and rebirth",4,0,1,0,0,""],
+["Jera","harvest",2,0,0,0,0,"Or hit for the damage you took last turn, if higher."],
+["Ingwaz","seed",3,0,0,0,0,"Your next hit gets +6."],
+["Raidho","the road",2,0,0,0,0,"Reduce the next hit you take by 3."],
+["Ehwaz","the horse, carrying on",0,0,4,0,0,"Clear all your statuses."],
+["Wunjo","joy, last laugh",4,0,0,0,0,"Hit 8 instead if you are below half HP."]]}];
+
+function calc(r,fi){
+ var h=r[2],s=r[3],he=r[4],sh=r[5],mn=r[6],n=[],d=h;
+ if(r[7])n.push(r[7]);
+ var f=FORMS[fi][0],dmgForm=["Bolt","Wave","Drain","Curse","Nova"].indexOf(f)>-1;
+ if(f=="Bolt")d+=2;
+ if(f=="Wave"){d=Math.max(1,d-1);n.push("Ignores shield.")}
+ if(f=="Ward"){sh+=Math.max(d,2);d=0}
+ if(f=="Drain"){d=Math.max(1,d-1);he+=d}
+ if(f=="Curse")d+=1;
+ if(f=="Nova"){d+=4;s+=3}
+ if(d>12){d=12;n.push("Capped at 12 damage.")}
+ if(sh>8){sh=8;n.push("Shield from one roll is capped at 8.")}
+ return {d:d,s:s,he:he,sh:sh,mn:mn,n:n};
+}
+var TYPE={Bolt:"Break",Nova:"Break",Wave:"Flow",Surge:"Flow",Echo:"Flow",Ward:"Bind",Drain:"Bind",Curse:"Bind"};
+var BEATS={Break:"Flow",Flow:"Bind",Bind:"Break"};
+var EFFECT={Break:"The committed winner gains the triangle bonus.",Flow:"The committed winner gains the triangle bonus.",Bind:"The loser takes 2 recoil damage."};
+var STATES=["Break","Flow","Bind"];
+var S=[{c:0,r:4,f:0,t:"Break"},{c:2,r:2,f:1,t:"Flow"}];
+function field(lb,opts,val,cb){var w=document.createElement("label");w.appendChild(document.createTextNode(lb));var s=document.createElement("select");opts.forEach(function(o,i){s.add(new Option(o,i))});s.value=val;s.onchange=function(){cb(+s.value)};w.appendChild(s);return w}
+function renderSim(){
+ var c=document.getElementById("simctl");c.innerHTML="";
+ [0,1].forEach(function(i){
+  var p=S[i],b=document.createElement("div");b.className="pl";
+  var h=document.createElement("h3");h.textContent=i?"Mage B":"Mage A";b.appendChild(h);
+  b.appendChild(field("Class",CLASSES.map(function(x){return x.n}),p.c,function(v){p.c=v;p.r=0;renderSim()}));
+  b.appendChild(field("D6 rune",CLASSES[p.c].r.map(function(x){return x[0]}),p.r,function(v){p.r=v;renderSim()}));
+  b.appendChild(field("D8 form",FORMS.map(function(x){return x[0]+" ("+TYPE[x[0]]+")"}),p.f,function(v){p.f=v;renderSim()}));
+  b.appendChild(field("Declared state",STATES,STATES.indexOf(p.t),function(v){p.t=STATES[v];renderSim()}));
+  c.appendChild(b)});
+ resolveSim();
+}
+function resolveSim(){
+ var o=S.map(function(p){return calc(CLASSES[p.c].r[p.r],p.f)});
+ var nm=S.map(function(p){return CLASSES[p.c].r[p.r][0]+" + "+FORMS[p.f][0]});
+ var ok=S.map(function(p){return TYPE[FORMS[p.f][0]]==p.t});
+ var d=[o[0].d,o[1].d],sh=[o[0].sh,o[1].sh],rc=[0,0],L=[],N="AB",w=-1;
+ if(S[0].t!=S[1].t)w=BEATS[S[0].t]==S[1].t?0:1;
+ L.push("Mage A: "+nm[0]+(ok[0]?" (committed)":" (off-type)")+". Mage B: "+nm[1]+(ok[1]?" (committed)":" (off-type)")+".");
+ if(w<0)L.push("Same state declared, so no triangle effect.");
+ else{var l=1-w;L.push(S[w].t+" beats "+S[l].t+".");
+  if(ok[w]){d[w]=Math.min(12,d[w]+2);sh[w]=Math.min(8,sh[w]+2);L.push("Mage "+N[w]+" is committed and gains +2 damage and +2 shield. "+EFFECT[S[w].t]);if(S[w].t=="Bind")rc[l]+=2}
+  else L.push("Mage "+N[w]+" won the triangle but landed an off-type form, so there is no bonus.");
+  if(d[l]>0)d[l]=Math.max(1,d[l]-1);L.push("Mage "+N[l]+"’s spell gets −1.")}
+ var out=document.getElementById("simout");out.innerHTML="";
+ L.forEach(function(x){out.appendChild(el("p",null,x))});
+ [0,1].forEach(function(i){
+  var e=1-i,inc=d[e],ab=FORMS[S[e].f][0]=="Wave"?0:Math.min(inc,sh[i]),tk=inc-ab;
+  var net=o[i].he-tk-o[i].s-rc[i];
+  var p=el("p",null,"Mage "+N[i]+": deals "+d[i]+", takes "+tk+(ab?" (shield absorbed "+ab+")":"")+(o[i].s?", self-damage "+o[i].s:"")+(rc[i]?", recoil "+rc[i]:"")+(o[i].he?", heals "+o[i].he:"")+". Net HP "+(net>0?"+":"")+net+".");
+  p.style.fontWeight="600";out.appendChild(p)});
+}
+var cur=0,sel=null;
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function chips(o){var a=[];if(o.sh)a.push("S"+o.sh);if(o.he)a.push("H"+o.he);if(o.mn)a.push("M"+o.mn);if(o.s)a.push("−"+o.s);return a.join(" ")}
+function render(){
+ var C=CLASSES[cur],t=document.getElementById("tabs");t.innerHTML="";
+ CLASSES.forEach(function(c,i){var b=el("button",null,c.n);b.setAttribute("aria-pressed",i==cur);b.onclick=function(){cur=i;sel=null;render()};t.appendChild(b)});
+ document.getElementById("rule").textContent=C.rule;
+ var g=document.getElementById("grid");g.innerHTML="";
+ var hr=el("tr");hr.appendChild(el("th","r","Rune"));
+ FORMS.forEach(function(f,i){var th2=el("th",null,(i+1)+" "+f[0]);th2.appendChild(el("small","c",TYPE[f[0]]));hr.appendChild(th2)});g.appendChild(hr);
+ C.r.forEach(function(r,ri){
+  var tr=el("tr"),th=el("th","r",r[0]);th.appendChild(el("small",null,r[1]));tr.appendChild(th);
+  FORMS.forEach(function(f,fi){
+   var o=calc(r,fi),td=el("td",sel&&sel[0]==ri&&sel[1]==fi?"on":""),b=el("button");
+   b.setAttribute("aria-label",r[0]+" with "+f[0]);
+   b.appendChild(el("span","d",o.d>0?o.d:"–"));
+   var cs=chips(o);if(cs)b.appendChild(el("span","c",cs));
+   b.onclick=function(){sel=[ri,fi];render();document.getElementById("detail").scrollIntoView({block:"nearest"})};
+   td.appendChild(b);tr.appendChild(td)});
+  g.appendChild(tr)});
+ detail();
+}
+function detail(){
+ var d=document.getElementById("detail");d.innerHTML="";
+ if(!sel){d.appendChild(el("p","k","Tap a cell to see exactly what that roll does. S = shield, H = heal, M = mana, − = damage to yourself."));return}
+ var r=CLASSES[cur].r[sel[0]],f=FORMS[sel[1]],o=calc(r,sel[1]);
+ d.appendChild(el("h2",null,r[0]+" + "+f[0]));
+ d.appendChild(el("p",null,r[0]+" means “"+r[1]+"”."));
+ d.appendChild(el("p",null,f[0]+" ("+TYPE[f[0]]+" form): "+f[1]+"."));
+ var out=[];
+ out.push(o.d>0?"Deal "+o.d+" damage":"No direct damage");
+ if(o.sh)out.push("gain "+o.sh+" shield");if(o.he)out.push("heal "+o.he);if(o.mn)out.push("gain "+o.mn+" mana");if(o.s)out.push("take "+o.s+" damage yourself");
+ var p=el("p",null,out.join(", ")+".");p.style.fontWeight="600";d.appendChild(p);
+ o.n.forEach(function(x){d.appendChild(el("p","k",x))});
+}
+var fl=document.getElementById("forms");
+FORMS.forEach(function(f,i){fl.appendChild(el("dt",null,(i+1)+" "+f[0]));fl.appendChild(el("dd",null,f[1]+" ("+TYPE[f[0]]+")"))});
+render();
+renderSim();
+</script>
+</body>
+</html>
