@@ -15,22 +15,51 @@ const screens = {
 };
 
 
+// The free game server sleeps when nobody plays and takes about a minute to wake.
+// While it wakes, the host answers with a gateway error, so reads are retried and a notice is shown.
+const wakeListeners = new Set();
+function setWaking(value) { wakeListeners.forEach((listener) => listener(value)); }
+const WAKE_STATUSES = new Set([502, 503, 504]);
+
 async function request(path, options = {}, token) {
-  const response = await fetch(`/api/v1${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
+  const method = (options.method || "GET").toUpperCase();
+  const retry = method === "GET";
+  const started = Date.now();
+  let response;
+  for (;;) {
+    try {
+      response = await fetch(`/api/v1${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.headers || {})
+        }
+      });
+    } catch (networkError) {
+      response = null;
     }
-  });
+    const sleeping = !response || WAKE_STATUSES.has(response.status);
+    if (!sleeping || !retry || Date.now() - started > 90000) break;
+    setWaking(true);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  setWaking(false);
+  if (!response) throw new Error("Could not reach the game server. Check your connection and try again.");
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.error?.message || "Request failed.");
+    const error = new Error(data.error?.message || (WAKE_STATUSES.has(response.status) ? "The game server is starting up. Try again in a moment." : "Request failed."));
     error.status = response.status;
     throw error;
   }
   return data;
+}
+
+function WakeNotice() {
+  const [waking, setWakingState] = useState(false);
+  useEffect(() => { wakeListeners.add(setWakingState); return () => wakeListeners.delete(setWakingState); }, []);
+  if (!waking) return null;
+  return <div className="wake-notice" role="status"><i aria-hidden="true" />Waking the server… this can take up to a minute.</div>;
 }
 
 export default function Home() {
@@ -635,6 +664,7 @@ export default function Home() {
 
   return (
     <main className="game-shell">
+      <WakeNotice />
       <header className="game-header">
         <div className="brand-lockup"><div className="rune-crest">ᚱ</div><div><h1>Rune Duel</h1><p className="sub">The arcane arena awaits</p></div></div>
         {content?.season && <div className="season-badge">SEASON {content.season.number} <span>•</span> {content.season.title.toUpperCase()}</div>}
@@ -1035,7 +1065,7 @@ function HomeScreen({ profile, duel, onTutorial, onSkipTutorial, onContinue, onF
     </section>
 
     <WorldBottomNav active="home" onHome={() => {}} onNavigate={onNavigate} />
-    <details className="dev-tools world-dev"><summary>Development test controls</summary><p className="muted">These controls are disabled by the API in production.</p><div className="actions"><button className="secondary" onClick={() => onResult(true)}>Record win</button><button className="secondary" onClick={() => onResult(false)}>Record loss</button><button className="secondary" onClick={onWheel}>Turn Wheel</button></div></details>
+    {process.env.NODE_ENV !== "production" && <details className="dev-tools world-dev"><summary>Development test controls</summary><p className="muted">These controls are disabled by the API in production.</p><div className="actions"><button className="secondary" onClick={() => onResult(true)}>Record win</button><button className="secondary" onClick={() => onResult(false)}>Record loss</button><button className="secondary" onClick={onWheel}>Turn Wheel</button></div></details>}
   </section>;
 }
 

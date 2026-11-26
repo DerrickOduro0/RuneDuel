@@ -35,16 +35,22 @@ public static class LiveConfig
 public static class AdminEndpoints
 {
     private static readonly string[] Rarities = ["common", "rare", "epic"];
-    private const long MaxImageBytes = 5 * 1024 * 1024;
+    private const long MaxImageBytes = 1024 * 1024;
 
     public static string UploadFolder(IWebHostEnvironment env) => Path.Combine(env.ContentRootPath, "uploads");
 
     public static void MapAdminEndpoints(this WebApplication app, GameRules seedRules)
     {
         // Uploaded pictures are public: the game shows them to every player.
-        app.MapGet("/api/v1/files/{name}", (string name, IWebHostEnvironment env) =>
+        // They are stored in the database, so they survive redeploys and move with the data.
+        app.MapGet("/api/v1/files/{name}", async (string name, RuneDbContext db, IWebHostEnvironment env, HttpContext http) =>
         {
             if (!Regex.IsMatch(name, "^[a-z0-9-]+\\.(png|jpg|webp)$")) return Results.NotFound();
+            // Names are never reused, so browsers may keep a picture for good.
+            http.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            var stored = await db.UploadedFiles.AsNoTracking().FirstOrDefaultAsync(x => x.Name == name);
+            if (stored is not null) return Results.File(stored.Data, stored.ContentType);
+            // Older local uploads that were saved to disk before pictures moved into the database.
             var path = Path.Combine(UploadFolder(env), name);
             if (!File.Exists(path)) return Results.NotFound();
             var type = name.EndsWith(".png") ? "image/png" : name.EndsWith(".webp") ? "image/webp" : "image/jpeg";
@@ -110,7 +116,7 @@ public static class AdminEndpoints
             return Results.Ok(ItemDto(item));
         });
 
-        // Upload a picture for an item. Accepts PNG, JPEG or WebP up to 5 MB.
+        // Upload a picture for an item. Accepts PNG, JPEG or WebP up to 1 MB.
         admin.MapPost("/items/{key}/image", async (string key, HttpRequest request, RuneDbContext db, IWebHostEnvironment env) =>
         {
             var item = await db.Items.FindAsync(key);
@@ -119,16 +125,16 @@ public static class AdminEndpoints
             var form = await request.ReadFormAsync();
             var file = form.Files.FirstOrDefault();
             if (file is null || file.Length == 0) return Error("no_file", "Choose an image to upload.", 400);
-            if (file.Length > MaxImageBytes) return Error("too_large", "Images must be 5 MB or smaller.", 400);
+            if (file.Length > MaxImageBytes) return Error("too_large", "Images must be 1 MB or smaller. Export as WebP or a smaller PNG.", 400);
             await using var stream = new MemoryStream();
             await file.CopyToAsync(stream);
             var bytes = stream.ToArray();
             var ext = ImageExtension(bytes);
             if (ext is null) return Error("not_an_image", "Upload a PNG, JPEG or WebP image.", 400);
-            Directory.CreateDirectory(UploadFolder(env));
             // A new name each time so browsers do not keep showing the old picture.
             var name = $"item-{key}-{DateTime.UtcNow:yyyyMMddHHmmss}{ext}";
-            await File.WriteAllBytesAsync(Path.Combine(UploadFolder(env), name), bytes);
+            await RemoveStoredFile(db, item.Image);
+            db.UploadedFiles.Add(new UploadedFile { Name = name, ContentType = ContentTypeFor(ext), Data = bytes, CreatedAtUtc = DateTime.UtcNow });
             item.Image = $"/api/v1/files/{name}";
             await db.SaveChangesAsync();
             return Results.Ok(ItemDto(item));
@@ -138,6 +144,7 @@ public static class AdminEndpoints
         {
             var item = await db.Items.FindAsync(key);
             if (item is null) return Error("not_found", "Item not found.", 404);
+            await RemoveStoredFile(db, item.Image);
             item.Image = "";
             await db.SaveChangesAsync();
             return Results.Ok(ItemDto(item));
@@ -251,6 +258,17 @@ public static class AdminEndpoints
         Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && await db.Players.FindAsync(id) is { IsAdmin: true, Banned: false } player ? player : null;
 
     // Checks the file's first bytes, not its name, so only real images are stored.
+    private static string ContentTypeFor(string ext) => ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+
+    // Deletes the picture an item used before, so replaced pictures do not fill the database.
+    private static async Task RemoveStoredFile(RuneDbContext db, string? image)
+    {
+        const string prefix = "/api/v1/files/";
+        if (string.IsNullOrEmpty(image) || !image.StartsWith(prefix)) return;
+        var old = await db.UploadedFiles.FirstOrDefaultAsync(x => x.Name == image.Substring(prefix.Length));
+        if (old is not null) db.UploadedFiles.Remove(old);
+    }
+
     private static string? ImageExtension(byte[] b)
     {
         if (b.Length > 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) return ".png";

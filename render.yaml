@@ -1,0 +1,19 @@
+# Render Blueprint for the Rune Duel API (the game server).
+# In Render: New > Blueprint, pick this repository, then fill in the values it asks for.
+services:
+  - type: web
+    name: rune-duel-api
+    runtime: docker
+    plan: free
+    region: frankfurt          # closest Render region to the Supabase database (Ireland)
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: ConnectionStrings__Postgres
+        sync: false            # Render asks for this: your Supabase connection, with the real password
+      - key: Jwt__Key
+        generateValue: true    # Render makes a long random secret for signing logins
+      - key: Admin__Users
+        value: WhiteMisty,Wizzpa,Diero

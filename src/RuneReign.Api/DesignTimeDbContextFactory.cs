@@ -3,12 +3,14 @@ using Microsoft.EntityFrameworkCore.Design;
 
 namespace RuneReign.Api;
 
+// Used only by "dotnet ef migrations add". Migrations are written for PostgreSQL, the hosted database.
 public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<RuneDbContext>
 {
     public RuneDbContext CreateDbContext(string[] args)
     {
+        DatabaseSetup.UsePlainTimestamps();
         var options = new DbContextOptionsBuilder<RuneDbContext>()
-            .UseMySql("Server=localhost;Database=runereign;User=root;Password=development;", ServerVersion.Parse("8.0.36"))
+            .UseNpgsql("Host=localhost;Database=runereign;Username=postgres;Password=development")
             .Options;
         return new RuneDbContext(options);
     }

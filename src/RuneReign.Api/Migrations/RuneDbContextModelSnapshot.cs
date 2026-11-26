@@ -2,8 +2,8 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using RuneReign.Api;
 
 #nullable disable
@@ -18,37 +18,37 @@ namespace RuneReign.Api.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "8.0.20")
-                .HasAnnotation("Relational:MaxIdentifierLength", 64);
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("RuneReign.Api.ArenaMode", b =>
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(32)
-                        .HasColumnType("varchar(32)");
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Icon")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<bool>("IsLive")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Tag")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Key");
 
@@ -59,25 +59,25 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<int>("Cap")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Effect")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Icon")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Key");
 
@@ -88,29 +88,29 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ClassName")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Meaning")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Symbol")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -123,215 +123,215 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("AcceptDeadlineUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool>("AcceptedA")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("AcceptedB")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("BonusesA")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("BonusesB")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("ClassA")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("ClassB")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("CoinsA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("CoinsB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("FormA")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("FormB")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("HpA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("HpB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsDraw")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("LastLog")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("LastRollA")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("LastRollB")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("LastSeenA")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<DateTime?>("LastSeenB")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int>("LeagueChangeA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("LeagueChangeB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("ManaA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("ManaB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Mode")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("PendingA")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("PendingB")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("PendingD8AdjustmentA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PendingD8AdjustmentB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PendingFormA")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("PendingFormB")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<bool>("PendingRerollA")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("PendingRerollB")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("PlayerAId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("PlayerBId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("PointsDeltaA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PointsDeltaB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("RatingDeltaA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("RatingDeltaB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("RematchA")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("RematchB")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<Guid?>("RematchMatchId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<bool>("ResultsApplied")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("RuneA")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("RuneB")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("ShadeDifficulty")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("ShieldA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("ShieldB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("StatesA")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("StatesB")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("TalismanA")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("TalismanB")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("TalismanFiredA")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("TalismanFiredB")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("TalismanFlagsA")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("TalismanFlagsB")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("TalismanUsesA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("TalismanUsesB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Turn")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("UsedRunesA")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("UsedRunesB")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<Guid?>("WinnerId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -346,53 +346,53 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("FormA")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("FormB")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<int>("HpA")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("HpB")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Log")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<Guid>("MatchId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("RuneA")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("RuneB")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("StateA")
                         .IsRequired()
                         .HasMaxLength(8)
-                        .HasColumnType("varchar(8)");
+                        .HasColumnType("character varying(8)");
 
                     b.Property<string>("StateB")
                         .IsRequired()
                         .HasMaxLength(8)
-                        .HasColumnType("varchar(8)");
+                        .HasColumnType("character varying(8)");
 
                     b.Property<int>("Turn")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -405,18 +405,18 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Name")
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("Beats")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("LosesTo")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Name");
 
@@ -427,14 +427,14 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Key");
 
@@ -445,24 +445,24 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(12)
-                        .HasColumnType("varchar(12)");
+                        .HasColumnType("character varying(12)");
 
                     b.Property<Guid?>("CombatMatchId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<Guid>("HostId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -478,18 +478,18 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Name")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("CoreRule")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Playstyle")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Name");
 
@@ -500,15 +500,15 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Key");
 
@@ -519,16 +519,16 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -539,24 +539,24 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CrownedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int>("League")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Matches")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("SeasonName")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Username")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -567,75 +567,75 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("Edge")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Focus")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Grit")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Guard")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Icon")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Image")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("varchar(512)");
+                        .HasColumnType("character varying(512)");
 
                     b.Property<bool>("InShop")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("Insight")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsStarter")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Kind")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("Pierce")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Power")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PriceCoins")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("PriceGems")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Rarity")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<int>("Resolve")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Vigor")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Key");
 
@@ -645,11 +645,11 @@ namespace RuneReign.Api.Migrations
             modelBuilder.Entity("RuneReign.Api.LeagueTier", b =>
                 {
                     b.Property<int>("Number")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Number");
 
@@ -660,30 +660,30 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("CombatMatchId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("JoinedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<DateTime?>("LastHeartbeatUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool>("Matched")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Mode")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<Guid?>("OpponentId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("PlayerId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -696,39 +696,39 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Kind")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Metric")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Repeat")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("RewardCoins")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("RewardGems")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("Target")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Task")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Key");
 
@@ -739,23 +739,23 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("ClaimedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("ObjectiveKey")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("PeriodKey")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<Guid>("PlayerId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -769,58 +769,58 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<bool>("Banned")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("ClassName")
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("Coins")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Email")
                         .IsRequired()
-                        .HasColumnType("varchar(255)");
+                        .HasColumnType("text");
 
                     b.Property<int>("Gems")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsAdmin")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("League")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("Points")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("RealmInitializedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int>("SeasonMatches")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SeasonWins")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("SkillRating")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<int>("StoryChapter")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("TutorialDone")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Username")
                         .IsRequired()
-                        .HasColumnType("varchar(255)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -837,21 +837,21 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("AcquiredAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool>("Equipped")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("ItemKey")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<Guid>("PlayerId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -865,28 +865,28 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Body")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<Guid>("PlayerId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("ReadAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("Sender")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Subject")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -899,22 +899,22 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("PlayerId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<bool>("CompactHud")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("DamageNumbers")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("DiceAnimation")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("ReduceMotion")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.HasKey("PlayerId");
 
@@ -925,21 +925,21 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("AcquiredAtUtc")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool>("Equipped")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("PlayerId")
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("TalismanKey")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.HasKey("Id");
 
@@ -953,18 +953,18 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Name")
                         .HasMaxLength(32)
-                        .HasColumnType("varchar(32)");
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("Blurb")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("Face")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("State")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.HasKey("Name");
 
@@ -974,18 +974,18 @@ namespace RuneReign.Api.Migrations
             modelBuilder.Entity("RuneReign.Api.StoryChapterDefinition", b =>
                 {
                     b.Property<int>("Number")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Body")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<int>("UnlockMatches")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Number");
 
@@ -996,51 +996,74 @@ namespace RuneReign.Api.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("Budget")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("Drawback")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
+                        .HasColumnType("character varying(300)");
 
                     b.Property<string>("Effect")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
+                        .HasColumnType("character varying(300)");
 
                     b.Property<bool>("Enabled")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Icon")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("PriceCoins")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<bool>("Ranked")
-                        .HasColumnType("tinyint(1)");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Rarity")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
+                        .HasColumnType("character varying(16)");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("Key");
 
                     b.ToTable("Talismans");
+                });
+
+            modelBuilder.Entity("RuneReign.Api.UploadedFile", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("UploadedFiles");
                 });
 #pragma warning restore 612, 618
         }

@@ -18,3 +18,10 @@ backup-before-*/
 .vs/
 .vscode/
 *.user
+
+# Local picture uploads (hosted pictures live in the database)
+uploads/
+
+# Secrets
+.env
+.env.*

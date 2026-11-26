@@ -372,6 +372,15 @@ public sealed class PlayerMessage
     public DateTime? ReadAtUtc { get; set; }
 }
 
+// A picture uploaded from the admin page. Kept in the database so it survives redeploys on hosts with no lasting disk.
+public sealed class UploadedFile
+{
+    public string Name { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public byte[] Data { get; set; } = [];
+    public DateTime CreatedAtUtc { get; set; }
+}
+
 public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbContext(options)
 {
     public DbSet<Player> Players => Set<Player>();
@@ -399,6 +408,7 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
     public DbSet<PlayerTalisman> PlayerTalismans => Set<PlayerTalisman>();
     public DbSet<ObjectiveClaim> ObjectiveClaims => Set<ObjectiveClaim>();
     public DbSet<PlayerMessage> PlayerMessages => Set<PlayerMessage>();
+    public DbSet<UploadedFile> UploadedFiles => Set<UploadedFile>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -469,5 +479,8 @@ public sealed class RuneDbContext(DbContextOptions<RuneDbContext> options) : DbC
         builder.Entity<ObjectiveClaim>().Property(x => x.PeriodKey).HasMaxLength(16);
         builder.Entity<ObjectiveClaim>().HasIndex(x => new { x.PlayerId, x.ObjectiveKey, x.PeriodKey }).IsUnique();
         builder.Entity<PlayerMessage>().HasIndex(x => x.PlayerId);
+        builder.Entity<UploadedFile>().HasKey(x => x.Name);
+        builder.Entity<UploadedFile>().Property(x => x.Name).HasMaxLength(128);
+        builder.Entity<UploadedFile>().Property(x => x.ContentType).HasMaxLength(32);
     }
 }

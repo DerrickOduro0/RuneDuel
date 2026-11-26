@@ -13,11 +13,12 @@ var builder = WebApplication.CreateBuilder(args);
 // GameRules.json only seeds the database on first start. After that the database is the source of truth.
 var seedRules = ContentStore.ReadSeedRules(Path.Combine(AppContext.BaseDirectory, "GameRules.json"));
 
-var connection = builder.Configuration.GetConnectionString("MySql");
+DatabaseSetup.UsePlainTimestamps();
+var connection = DatabaseSetup.PostgresConnection(builder.Configuration);
 var sqliteConnection = builder.Configuration.GetConnectionString("Sqlite") ?? "Data Source=runereign.db";
-if (!string.IsNullOrWhiteSpace(connection))
+if (connection is not null)
 {
-    builder.Services.AddDbContext<RuneDbContext>(options => options.UseMySql(connection, ServerVersion.AutoDetect(connection)));
+    builder.Services.AddDbContext<RuneDbContext>(options => options.UseNpgsql(connection));
 }
 else
 {
@@ -25,6 +26,9 @@ else
 }
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "development-only-change-this-jwt-key-32-chars";
+// A hosted game must sign logins with its own secret, or anyone could forge one with the public development key.
+if (!builder.Environment.IsDevelopment() && (jwtKey.StartsWith("development-only") || jwtKey.Length < 32))
+    throw new InvalidOperationException("Set Jwt__Key to a random secret of at least 32 characters before hosting the game.");
 // Rules and settings come from the database and are reloaded when an admin saves a change.
 builder.Services.AddTransient(_ => LiveConfig.Rules);
 builder.Services.AddTransient(_ => LiveConfig.Server);
@@ -46,13 +50,18 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHostedService<WheelWorker>();
 
 var app = builder.Build();
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+// Lets the host check the server is up without touching the database.
+app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
-if (!string.IsNullOrWhiteSpace(connection))
+if (connection is not null)
 {
     using var migrationScope = app.Services.CreateScope();
     migrationScope.ServiceProvider.GetRequiredService<RuneDbContext>().Database.Migrate();
@@ -84,7 +93,7 @@ app.MapAdminEndpoints(seedRules);
 
 app.MapGet("/api/v1/classes", (GameRules r) => Results.Ok(r.Classes));
 
-app.MapPost("/api/v1/auth/register", async (RegisterRequest request, RuneDbContext db, IPasswordHasher<Player> hasher) =>
+app.MapPost("/api/v1/auth/register", async (RegisterRequest request, RuneDbContext db, IPasswordHasher<Player> hasher, IConfiguration config) =>
 {
     if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
         return ApiError("validation_error", "Username, email, and password are required.", 400);
@@ -94,6 +103,9 @@ app.MapPost("/api/v1/auth/register", async (RegisterRequest request, RuneDbConte
         return ApiError("account_exists", "Username or email is already in use.", 409);
 
     var player = new Player { Id = Guid.NewGuid(), Username = request.Username.Trim(), Email = request.Email.Trim().ToLowerInvariant(), PasswordHash = "" };
+    // A name listed in Admin:Users becomes an admin as soon as the account exists, with no restart needed.
+    player.IsAdmin = (config["Admin:Users"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Any(x => string.Equals(x, player.Username, StringComparison.OrdinalIgnoreCase));
     player.PasswordHash = hasher.HashPassword(player, request.Password);
     db.Players.Add(player);
     await db.SaveChangesAsync();

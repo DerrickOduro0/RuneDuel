@@ -1306,3 +1306,8 @@ button{text-shadow:none}
 /* Admin link in Settings (admins only) */
 .settings-actions .admin-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 18px;border-radius:4px;background:#ffffff14;color:#e6eaee;text-decoration:none;font-weight:700}
 .settings-actions .admin-link:hover{background:#ffffff24}
+
+/* Shown while the free game server wakes up */
+.wake-notice{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:4px;background:#11151a;color:#e6eaee;font-weight:600;box-shadow:0 8px 24px #0009;max-width:calc(100vw - 32px)}
+.wake-notice i{width:14px;height:14px;border-radius:50%;border:2px solid #f2b632;border-top-color:transparent;animation:wake-spin .8s linear infinite;flex:none}
+@keyframes wake-spin{to{transform:rotate(360deg)}}

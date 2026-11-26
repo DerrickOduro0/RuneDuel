@@ -189,7 +189,7 @@ function Items({ notify }) {
                 <label className="adm-file"><input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />Upload picture</label>
                 {form.image && <button className="ghost" disabled={busy} onClick={resetImage}>Use default file</button>}
               </>}
-              <p className="adm-hint">PNG, JPEG or WebP, up to 5 MB. Square works best.</p>
+              <p className="adm-hint">PNG, JPEG or WebP, up to 1 MB. Square works best; WebP keeps files small.</p>
             </div>
           </div>
           <div className="adm-grid">
