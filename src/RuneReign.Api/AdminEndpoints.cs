@@ -13,7 +13,7 @@ public sealed record AdminItemEdit(
 public sealed record AdminTalismanEdit(string? Name, string? Icon, string? Effect, string? Drawback, int? PriceCoins, bool? Enabled, bool? Ranked, int? SortOrder, string? Rarity = null, int? Budget = null);
 public sealed record AdminAttributeEdit(string? Name, string? Effect, int? Cap);
 public sealed record AdminSettingEdit(string Value);
-public sealed record AdminPlayerEdit(int? Coins, int? Gems, bool? Banned, bool? IsAdmin);
+public sealed record AdminPlayerEdit(int? Coins, int? Gems, bool? Banned, bool? IsAdmin, int? Dust = null, int? Shards = null);
 public sealed record AdminAnnouncement(string Subject, string Body);
 
 // Rules and server settings, read from the database. Reloaded when an admin changes a setting,
@@ -29,6 +29,7 @@ public static class LiveConfig
         Server = ContentStore.LoadServerSettings(db);
         Progression.Load(ContentStore.ReadSettings(db));
         Maintenance.Load(ContentStore.ReadSettings(db));
+        Forge.Load(ContentStore.ReadSettings(db));
         TalismanCatalog.Load(db);
     }
 }
@@ -246,6 +247,8 @@ public static class AdminEndpoints
                 return Error("self", "You cannot ban yourself or remove your own admin access.", 400);
             if (edit.Coins is not null) { if (edit.Coins < 0) return Error("invalid", "Coins cannot be negative.", 400); target.Coins = edit.Coins.Value; }
             if (edit.Gems is not null) { if (edit.Gems < 0) return Error("invalid", "Gems cannot be negative.", 400); target.Gems = edit.Gems.Value; }
+            if (edit.Dust is not null) { if (edit.Dust < 0) return Error("invalid", "Rune Dust cannot be negative.", 400); target.Dust = edit.Dust.Value; }
+            if (edit.Shards is not null) { if (edit.Shards < 0) return Error("invalid", "Ember Shards cannot be negative.", 400); target.Shards = edit.Shards.Value; }
             if (edit.Banned is not null) target.Banned = edit.Banned.Value;
             if (edit.IsAdmin is not null) target.IsAdmin = edit.IsAdmin.Value;
             if (target.Banned)
@@ -258,6 +261,7 @@ public static class AdminEndpoints
         });
 
         AdminInsights.Map(admin);
+        Forge.MapForgeAdmin(admin);
 
         // ---- Announcements: a letter in every player's mailbox ----
         admin.MapPost("/announce", async (AdminAnnouncement message, RuneDbContext db) =>

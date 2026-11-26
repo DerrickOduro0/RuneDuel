@@ -299,7 +299,7 @@ public static class AdminInsights
     {
         p.Id, p.Username, p.Email, p.ClassName, p.League, p.Points, p.SkillRating, p.SeasonMatches, p.SeasonWins, p.Coins, p.Gems,
         p.IsAdmin, p.Banned, p.TutorialDone, p.StoryChapter, p.CreatedAtUtc, p.LastSeenAtUtc,
-        p.Xp, level = Progression.LevelFor(p.Xp), avatarUrl = ProfileEndpoints.AvatarUrl(p), p.Motto, p.WinStreak, p.BestWinStreak, p.BestLeague
+        p.Xp, level = Progression.LevelFor(p.Xp), avatarUrl = ProfileEndpoints.AvatarUrl(p), p.Motto, p.WinStreak, p.BestWinStreak, p.BestLeague, p.Dust, p.Shards
     };
 
     private static async Task<List<object>> MatchRows(RuneDbContext db, IQueryable<CombatMatch> query)

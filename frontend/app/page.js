@@ -882,11 +882,12 @@ function RealmPage({ page, content, profile, classes, league, realm, busy, notic
     rewards: ["Rewards", "Claim the rewards you have earned."],
     rankings: ["Rankings", "See how you compare with the realm."],
     friends: ["Friends", "Build your circle of rival mages."],
+    forge: ["The Forge", "Turn duel spoils into gear you cannot buy."],
     story: ["Story Mode", "Uncover the forgotten history of the runes."]
   };
   const [heading, subheading] = titles[page] || titles.characters;
   const questTabs = ["quests", "missions", "rewards"];
-  const loading = !realm && page !== "characters" && page !== "rankings" && page !== "friends";
+  const loading = !realm && page !== "characters" && page !== "rankings" && page !== "friends" && page !== "forge";
   const repeatLabel = { daily: "Resets daily", season: "This season", once: "One time" };
   const attributes = content?.attributes || [];
   const slotName = Object.fromEntries((content?.slots || []).map((slot) => [slot.key, slot.name]));
@@ -936,6 +937,7 @@ function RealmPage({ page, content, profile, classes, league, realm, busy, notic
     {realm && page === "rewards" && objectiveCards("reward")}
     {realm && page === "messages" && <div className="letters">{realm.messages.length === 0 && <p className="muted">No letters yet.</p>}{realm.messages.map((item) => <article className={`rank-card letter ${item.read ? "is-read" : ""}`} key={item.id}><span className="eyebrow">{item.sender}</span><h3>{item.subject}</h3><p>{item.body}</p><small className="muted">{new Date(item.createdAtUtc.endsWith("Z") ? item.createdAtUtc : `${item.createdAtUtc}Z`).toLocaleString()}</small>{!item.read && <button disabled={busy} onClick={() => onAction(`/realm/messages/${item.id}/read`)}>Mark as read</button>}</article>)}</div>}
     {page === "rankings" && <div className="rank-card"><h3>League rankings</h3>{league?.leaderboard?.slice(0, 10).map((player, index) => <div className="rank-line" key={player.username}><span>#{index + 1} {player.username}</span><strong>League {player.league} · {player.points} pts</strong></div>) || <p className="muted">Open League Hall to load rankings.</p>}<button onClick={onLeague}>Open League Hall</button></div>}
+    {page === "forge" && <ForgePanel token={token} attributes={attributes} slotName={slotName} />}
     {page === "friends" && <FriendsPanel token={token} challenge={challenge} onChallenge={onChallengeFriend} onCancelChallenge={onCancelChallenge} onAnswerInvite={onAnswerInvite} onChanged={onFriendsChanged} />}
     {realm && page === "story" && <div className="cards">{realm.story.chapters.map((chapter) => <article className={`card story-card ${chapter.unlocked ? "" : "is-locked"}`} key={chapter.number}><span className="eyebrow">CHAPTER {chapter.number}</span><h3>{chapter.title}</h3><p>{chapter.unlocked ? chapter.body : `Unlocks after ${chapter.unlockMatches} finished duels. You have finished ${realm.story.totalMatches}.`}</p><button disabled={busy || !chapter.unlocked || chapter.started} className={chapter.started ? "secondary" : ""} onClick={() => onAction(`/realm/story/${chapter.number}/begin`)}>{chapter.started ? "Begun" : chapter.unlocked ? "Begin chapter" : "Locked"}</button></article>)}</div>}
     </section>
@@ -1075,6 +1077,94 @@ function FriendsPanel({ token, challenge, onChallenge, onCancelChallenge, onAnsw
   </div>;
 }
 
+// The Forge: craft gear and talismans from Rune Dust and Ember Shards, or salvage what you do not use.
+function ForgePanel({ token, attributes, slotName, onChanged }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState("recipes");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const [filter, setFilter] = useState("all");
+  const load = useCallback(async () => {
+    try { setData(await request("/forge", {}, token)); setError(""); } catch (value) { setError(value.message); }
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  async function craft(recipe) {
+    setBusy(true); setNote("");
+    try {
+      setData(await request(`/forge/craft/${recipe.key}`, { method: "POST" }, token));
+      setNote(`Forged ${recipe.result.name}! ${recipe.result.type === "talisman" ? "Equip it on the Character screen." : "Wear it from the Character screen."}`);
+      onChanged?.();
+    } catch (value) { setNote(value.message); }
+    setBusy(false);
+  }
+  async function salvage(entry) {
+    const value = [entry.dust ? `${entry.dust} Rune Dust` : null, entry.shards ? `${entry.shards} Ember Shard${entry.shards > 1 ? "s" : ""}` : null].filter(Boolean).join(" and ");
+    if (!window.confirm(`Salvage ${entry.name} for ${value}? It will be gone from your collection.`)) return;
+    setBusy(true); setNote("");
+    try {
+      const result = await request("/forge/salvage", { method: "POST", body: JSON.stringify({ type: entry.type, key: entry.key }) }, token);
+      setData(result.forge);
+      setNote(`Salvaged ${entry.name}: +${value}.`);
+      onChanged?.();
+    } catch (failure) { setNote(failure.message); }
+    setBusy(false);
+  }
+
+  if (error) return <p className="error">{error}</p>;
+  if (!data) return <p className="muted">Heating the Forge…</p>;
+  const m = data.materials;
+  const recipes = data.recipes.filter((r) => filter === "all" || (filter === "talisman" ? r.result.type === "talisman" : r.result.type === "item"));
+  const art = (result) => ({ key: result.key, icon: result.icon, image: result.imageUrl || "" });
+
+  return <div className="forge">
+    <div className="forge-materials">
+      <div className="forge-mat is-dust"><span className="forge-mat-icon" aria-hidden="true">✦</span><div><b>{m.dust.toLocaleString()}</b><small>Rune Dust</small></div></div>
+      <div className="forge-mat is-shard"><span className="forge-mat-icon" aria-hidden="true">◆</span><div><b>{m.shards.toLocaleString()}</b><small>Ember Shards</small></div></div>
+      <p className="forge-sources">Ranked win: +{data.sources.rankedWin.dust} Dust, +{data.sources.rankedWin.shards} Shard · Ranked loss: +{data.sources.rankedLoss.dust} · Casual win: +{data.sources.casualWin.dust} · Hard Shade win: +{data.sources.shadeHardWin.dust} · Each level up: +{data.sources.levelUp.shards} Shard · Friend duels give none.</p>
+    </div>
+
+    <div className="forge-tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "recipes"} className={tab === "recipes" ? "is-on" : ""} onClick={() => setTab("recipes")}>Recipes</button>
+      <button role="tab" aria-selected={tab === "salvage"} className={tab === "salvage" ? "is-on" : ""} onClick={() => setTab("salvage")}>Salvage{data.salvage.length ? ` (${data.salvage.length})` : ""}</button>
+      {tab === "recipes" && <select aria-label="Show" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All recipes</option><option value="item">Gear</option><option value="talisman">Talismans</option></select>}
+    </div>
+    {note && <p className="forge-note" role="status">{note}</p>}
+
+    {tab === "recipes" && <div className="cards forge-cards">{recipes.map((recipe) => {
+      const r = recipe.result;
+      const locked = data.level < recipe.minLevel;
+      return <article key={recipe.key} className={`card shop-card forge-card rarity-${r.rarity || "common"} ${recipe.owned ? "is-owned" : ""} ${locked ? "is-locked" : ""}`}>
+        {r.type === "item" ? <ItemArt item={art(r)} className="mode-card-icon shop-item-art" /> : <span className="mode-card-icon forge-talisman-icon">{r.icon}</span>}
+        <h3>{r.name}</h3>
+        <p className="item-kind">{r.type === "item" ? (slotName[r.kind] || r.kind) : "Talisman"} · <b className={`rarity-label rarity-${r.rarity || "common"}`}>{r.rarity || "common"}</b>{r.type === "item" ? " · Forge only" : ""}</p>
+        {r.type === "item" && <StatChips stats={r.stats} attributes={attributes} />}
+        <p className="muted">{r.description}{r.type === "talisman" && r.cost ? <> <em className="forge-tal-cost">{r.cost}</em></> : null}</p>
+        <ul className="forge-cost">
+          <li className={m.dust >= recipe.cost.dust ? "ok" : "short"}>✦ {recipe.cost.dust} Dust</li>
+          {recipe.cost.shards > 0 && <li className={m.shards >= recipe.cost.shards ? "ok" : "short"}>◆ {recipe.cost.shards} Shard{recipe.cost.shards > 1 ? "s" : ""}</li>}
+          {recipe.cost.coins > 0 && <li className={m.coins >= recipe.cost.coins ? "ok" : "short"}>{recipe.cost.coins} coins</li>}
+          {recipe.minLevel > 1 && <li className={locked ? "short" : "ok"}>Level {recipe.minLevel}</li>}
+        </ul>
+        <button disabled={busy || !recipe.canCraft} className={recipe.canCraft ? "" : "secondary"} title={recipe.missing.length ? `Needs ${recipe.missing.join(", ")}` : undefined} onClick={() => craft(recipe)}>
+          {recipe.owned ? "Owned" : locked ? `Reach level ${recipe.minLevel}` : recipe.canCraft ? "Forge" : "Not enough"}
+        </button>
+      </article>;
+    })}</div>}
+
+    {tab === "salvage" && (data.salvage.length === 0
+      ? <div className="rank-card"><h3>Nothing to salvage</h3><p className="muted">Items and talismans you own but are not using show here. Starter gear and anything you have equipped cannot be salvaged.</p></div>
+      : <div className="cards forge-cards">{data.salvage.map((entry) => <article key={`${entry.type}-${entry.key}`} className={`card shop-card forge-card rarity-${entry.rarity || "common"}`}>
+          {entry.type === "item" ? <ItemArt item={{ key: entry.key, icon: entry.icon, image: entry.imageUrl || "" }} className="mode-card-icon shop-item-art" /> : <span className="mode-card-icon forge-talisman-icon">{entry.icon}</span>}
+          <h3>{entry.name}</h3>
+          <p className="item-kind">{entry.type === "item" ? (slotName[entry.kind] || entry.kind) : "Talisman"} · <b className={`rarity-label rarity-${entry.rarity || "common"}`}>{entry.rarity || "common"}</b></p>
+          <ul className="forge-cost"><li className="ok">+{entry.dust} Dust</li>{entry.shards > 0 && <li className="ok">+{entry.shards} Shard{entry.shards > 1 ? "s" : ""}</li>}</ul>
+          <button className="secondary" disabled={busy} onClick={() => salvage(entry)}>Salvage</button>
+        </article>)}</div>)}
+  </div>;
+}
+
 // Crops a picture to a centred square and shrinks it to 256 x 256, so uploads stay small whatever the phone camera produced.
 async function squareAvatar(file) {
   const url = URL.createObjectURL(file);
@@ -1209,6 +1299,7 @@ function ProfilePanel({ token, username, me, onClose, onChanged, onLogout }) {
             {tile("Talismans", data.talismansOwned, data.equippedTalisman ? `Using ${data.equippedTalisman}` : "None equipped")}
             {tile("Member since", sinceText(data.memberSince))}
             {own && data.wallet && tile("Wallet", `${data.wallet.coins.toLocaleString()} coins`, `${data.wallet.gems} gems`)}
+            {own && data.wallet && tile("Forge materials", `${(data.wallet.dust ?? 0).toLocaleString()} Rune Dust`, `${data.wallet.shards ?? 0} Ember Shards`)}
           </div>
         </section>
 
@@ -1254,6 +1345,7 @@ const ICONS = {
   helmet: "M6 20V10a6 6 0 0 1 12 0v10z M6 12h12 M12 12v8 M9 15.5h.01 M15 15.5h.01",
   bag: "M6 8h12l1 12H5L6 8z M9 8V6a3 3 0 0 1 6 0v2 M5 13h14",
   cart: "M3 4h3l2 11h10l2-8H7 M9 20.2h.01 M17 20.2h.01",
+  anvil: "M3 7h11a4 4 0 0 0 4 4h3v2h-4l-2 2v2h3v3H7v-3h3v-2l-3-3H5a2 2 0 0 1-2-2V7z",
   gear: "M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6 M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1",
   scroll: "M6 3h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V3z M6 3a2 2 0 0 0-2 2v1h2 M9.5 9h7 M9.5 13h7 M9.5 17h4",
   trophy: "M7 4h10v5a5 5 0 0 1-10 0V4z M7 6H4v2a3 3 0 0 0 3 3 M17 6h3v2a3 3 0 0 1-3 3 M12 14v4 M8 21h8 M9 18h6",
@@ -1305,6 +1397,7 @@ function WorldRail({ onNavigate }) {
     <button onClick={() => onNavigate("quests")}><span><Ico name="scroll" size={40} /></span>Quests</button>
     <button onClick={() => onNavigate("rankings")}><span><Ico name="trophy" size={40} /></span>Rankings</button>
     <button onClick={() => onNavigate("friends")}><span><Ico name="friends" size={40} />{friendBadge > 0 && <b className="rail-badge">{friendBadge}</b>}</span>Friends</button>
+    <button onClick={() => onNavigate("forge")}><span><Ico name="anvil" size={40} /></span>Forge</button>
   </aside>;
 }
 
@@ -2163,9 +2256,10 @@ function ResultSummary({ combat, onLoadRounds }) {
       </>}
       {combat.mode !== "friend" && <div><dt>Coins</dt><dd className="is-up">+{result.coins}</dd></div>}
       <div><dt>Experience</dt><dd className="is-xp">+{result.xp ?? 0} XP</dd></div>
+      {(result.dust > 0 || result.shards > 0) && <div><dt>Forge materials</dt><dd className="is-forge">{[result.dust ? `+${result.dust} Rune Dust` : null, result.shards ? `+${result.shards} Ember Shard${result.shards > 1 ? "s" : ""}` : null].filter(Boolean).join(" · ")}</dd></div>}
       <div><dt>Turns</dt><dd>{result.turns}</dd></div>
     </dl>}
-    {result && combat.practice && result.xp > 0 && <dl className="result-rows"><div><dt>Experience</dt><dd className="is-xp">+{result.xp} XP</dd></div></dl>}
+    {result && combat.practice && result.xp > 0 && <dl className="result-rows"><div><dt>Experience</dt><dd className="is-xp">+{result.xp} XP</dd></div>{result.dust > 0 && <div><dt>Forge materials</dt><dd className="is-forge">+{result.dust} Rune Dust</dd></div>}</dl>}
     {result?.levelUp && <p className="result-levelup"><b>Level {result.levelUp.level}!</b> +{result.levelUp.coins} coins{result.levelUp.gems ? ` · +${result.levelUp.gems} gems` : ""}</p>}
     {result?.leagueChange > 0 && <p className="result-promo">Promoted! You climbed {result.leagueChange} league{result.leagueChange > 1 ? "s" : ""}.</p>}
     {result?.leagueChange < 0 && <p className="result-demo">You dropped a league. Win your way back.</p>}

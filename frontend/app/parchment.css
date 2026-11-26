@@ -1445,3 +1445,34 @@ button.world-player:focus-visible{outline:2px solid #f2b632;outline-offset:2px}
 .maintenance-notice{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:240;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 32px);padding:10px 10px 10px 16px;border-radius:6px;background:#11151a;color:#e6eaee;box-shadow:0 10px 30px #000a,inset 3px 0 0 #f2b632}
 .maintenance-notice b{color:#f6c75a;margin-right:6px}
 .maintenance-notice button{width:32px;height:32px;min-height:0;padding:0;border-radius:50%;flex:none}
+
+/* ---- The Forge ---- */
+.forge{display:grid;gap:14px;width:100%}
+.forge-materials{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:14px 16px;border-radius:6px;background:#1b2027e6}
+.forge-mat{display:flex;align-items:center;gap:10px;padding:8px 14px 8px 8px;border-radius:6px;background:#ffffff0c}
+.forge-mat div{display:grid;line-height:1.15}
+.forge-mat b{font-size:1.35rem;color:#fff}
+.forge-mat small{color:#9aa5b1;font-weight:600}
+.forge-mat-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;font-size:1.2rem}
+.forge-mat.is-dust .forge-mat-icon{background:#8fb8ef22;color:#a9c8f2}
+.forge-mat.is-shard .forge-mat-icon{background:#f0874a26;color:#f4a06c}
+.forge-sources{margin:0;flex:1 1 320px;color:#9aa5b1;font-size:.85rem;line-height:1.45}
+.forge-tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.forge-tabs button{background:#ffffff10!important;color:#c9d1d9!important;border:0!important;box-shadow:none!important;padding:8px 16px;min-height:0}
+.forge-tabs button.is-on{background:#ffffff26!important;color:#fff!important;box-shadow:inset 0 -2px 0 #f2b632!important}
+.forge-tabs select{margin-left:auto;width:auto;min-width:150px}
+.forge-note{margin:0;padding:10px 14px;border-radius:5px;background:#ffffff10;color:#fff;font-weight:600}
+.forge-card.is-owned{opacity:.7}
+.forge-card.is-locked .shop-item-art,.forge-card.is-locked .forge-talisman-icon{filter:grayscale(.8) brightness(.8)}
+.forge-talisman-icon{display:grid;place-items:center;font-size:2rem;color:#f2d27a}
+.forge-tal-cost{display:block;margin-top:4px;color:#f08a7a;font-style:normal}
+.forge-cost{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.forge-cost li{padding:3px 9px;border-radius:999px;font-size:.8rem;font-weight:700;background:#ffffff10}
+.forge-cost li.ok{color:#9fe0b0}
+.forge-cost li.short{color:#f08a7a;background:#e0624f1a}
+.is-forge{color:#f4a06c!important}
+@media (max-width:560px){.forge-tabs select{margin-left:0;width:100%}}
+.forge-cost li{display:inline-flex!important;align-items:center;width:auto!important;height:auto!important;min-height:0!important;min-width:0!important;border-radius:999px!important;border:0!important;box-shadow:none!important;line-height:1.3;padding:3px 10px!important;margin:0!important}
+.forge-cost li::before,.forge-cost li::after{content:none!important;display:none!important}
+.forge-cost{align-items:flex-start!important;align-content:flex-start!important;height:auto!important;flex:0 0 auto!important}
+.forge-card{align-content:start}

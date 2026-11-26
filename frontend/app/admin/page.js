@@ -26,7 +26,7 @@ async function call(path, options = {}) {
 }
 
 const TABS = [
-  ["overview", "Overview"], ["maintenance", "Maintenance"], ["players", "Players"], ["matches", "Matches"], ["items", "Items"], ["talismans", "Talismans"],
+  ["overview", "Overview"], ["maintenance", "Maintenance"], ["players", "Players"], ["matches", "Matches"], ["items", "Items"], ["talismans", "Talismans"], ["forge", "Forge"],
   ["attributes", "Attributes"], ["settings", "Game settings"], ["announce", "Announce"]
 ];
 const STATS = ["power", "guard", "vigor", "focus", "grit", "edge", "pierce", "insight", "resolve"];
@@ -90,6 +90,7 @@ export default function AdminPage() {
       {tab === "matches" && <Matches {...shared} />}
       {tab === "items" && <Items {...shared} />}
       {tab === "talismans" && <Talismans {...shared} />}
+      {tab === "forge" && <ForgeAdmin {...shared} />}
       {tab === "attributes" && <Attributes {...shared} />}
       {tab === "settings" && <Settings {...shared} />}
       {tab === "announce" && <Announce {...shared} />}
@@ -289,7 +290,7 @@ function PlayerDetail({ id, me, notify, onMatch, onClose }) {
     try {
       const d = await call(`/admin/players/${id}`);
       setData(d);
-      setWallet({ coins: d.player.coins, gems: d.player.gems, banned: d.player.banned, isAdmin: d.player.isAdmin });
+      setWallet({ coins: d.player.coins, gems: d.player.gems, dust: d.player.dust, shards: d.player.shards, banned: d.player.banned, isAdmin: d.player.isAdmin });
     } catch (e) { setError(e.message); }
   }
   useEffect(() => {
@@ -305,7 +306,7 @@ function PlayerDetail({ id, me, notify, onMatch, onClose }) {
   const self = data && data.player.username === me.username;
   const saveWallet = () => {
     if (wallet.banned && !data.player.banned && !window.confirm(`Ban ${data.player.username}? They will be signed out of the game.`)) return;
-    act(() => call(`/admin/players/${id}`, { method: "PUT", body: JSON.stringify({ coins: Number(wallet.coins) || 0, gems: Number(wallet.gems) || 0, banned: wallet.banned, isAdmin: wallet.isAdmin }) }), "Player saved.");
+    act(() => call(`/admin/players/${id}`, { method: "PUT", body: JSON.stringify({ coins: Number(wallet.coins) || 0, gems: Number(wallet.gems) || 0, dust: Number(wallet.dust) || 0, shards: Number(wallet.shards) || 0, banned: wallet.banned, isAdmin: wallet.isAdmin }) }), "Player saved.");
   };
 
   return <div className="adm-drawer" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -344,10 +345,12 @@ function PlayerDetail({ id, me, notify, onMatch, onClose }) {
         </div>
 
         <section className="adm-sec">
-          <h3>Wallet and access</h3>
+          <h3>Wallet, materials and access</h3>
           <div className="adm-grid">
             <Field label="Coins"><input type="number" min="0" value={wallet.coins} onChange={(e) => setWallet({ ...wallet, coins: e.target.value })} /></Field>
             <Field label="Gems"><input type="number" min="0" value={wallet.gems} onChange={(e) => setWallet({ ...wallet, gems: e.target.value })} /></Field>
+            <Field label="Rune Dust"><input type="number" min="0" value={wallet.dust} onChange={(e) => setWallet({ ...wallet, dust: e.target.value })} /></Field>
+            <Field label="Ember Shards"><input type="number" min="0" value={wallet.shards} onChange={(e) => setWallet({ ...wallet, shards: e.target.value })} /></Field>
             <Field label="Banned"><Toggle value={wallet.banned} disabled={self} onChange={(v) => setWallet({ ...wallet, banned: v })} /></Field>
             <Field label="Admin"><Toggle value={wallet.isAdmin} disabled={self} onChange={(v) => setWallet({ ...wallet, isAdmin: v })} /></Field>
           </div>
@@ -670,6 +673,74 @@ function Talismans({ notify }) {
       </div>
       <div className="adm-actions"><button disabled={!t.dirty} onClick={() => save(t)}>Save</button></div>
     </div>)}</div>
+  </>;
+}
+
+/* ---------- Forge ---------- */
+function ForgeAdmin({ notify }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState([]);
+  const [add, setAdd] = useState({ resultType: "item", resultKey: "", dust: 100, shards: 2, coins: 0, minLevel: 1 });
+  async function load() {
+    try { const d = await call("/admin/forge"); setData(d); setRows(d.recipes); setError(""); } catch (e) { setError(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+  const edit = (key, field, value) => setRows((r) => r.map((x) => (x.key === key ? { ...x, [field]: value, dirty: true } : x)));
+  async function save(r) {
+    try {
+      const d = await call(`/admin/forge/recipes/${r.key}`, { method: "PUT", body: JSON.stringify({ dust: Number(r.dust) || 0, shards: Number(r.shards) || 0, coins: Number(r.coins) || 0, minLevel: Number(r.minLevel) || 1, enabled: r.enabled }) });
+      setData(d); setRows(d.recipes); notify(`${r.name} saved. Players see it straight away.`);
+    } catch (e) { notify(e.message, true); }
+  }
+  async function remove(r) {
+    if (!window.confirm(`Remove the recipe for ${r.name}? Players who already forged it keep it.`)) return;
+    try { const d = await call(`/admin/forge/recipes/${r.key}`, { method: "DELETE" }); setData(d); setRows(d.recipes); notify("Recipe removed."); } catch (e) { notify(e.message, true); }
+  }
+  async function create() {
+    try {
+      const d = await call("/admin/forge/recipes", { method: "POST", body: JSON.stringify({ ...add, dust: Number(add.dust) || 0, shards: Number(add.shards) || 0, coins: Number(add.coins) || 0, minLevel: Number(add.minLevel) || 1 }) });
+      setData(d); setRows(d.recipes); setAdd({ ...add, resultKey: "" }); notify("Recipe added.");
+    } catch (e) { notify(e.message, true); }
+  }
+  if (error) return <p className="adm-error">{error}</p>;
+  if (!data) return <p className="adm-muted">Loading…</p>;
+  const choices = add.resultType === "item" ? data.items : data.talismans;
+  const taken = new Set(rows.filter((r) => r.resultType === add.resultType).map((r) => r.resultKey));
+  return <>
+    <div className="adm-head"><h2>Forge</h2>
+      <p className="adm-muted">Recipes players can forge from Rune Dust and Ember Shards. How much each duel and each salvage gives is under Game settings (search "Dust", "Shard" or "Salvage"). To make an item forge-only, turn off "Sold in the shop" on the Items tab.</p>
+    </div>
+    <div className="adm-stats small">
+      <div><b>{rows.length}</b><span>Recipes</span></div>
+      <div><b>{rows.filter((r) => r.enabled).length}</b><span>Turned on</span></div>
+      <div><b>{Number(data.materialsHeld.dust).toLocaleString()}</b><span>Rune Dust held by players</span></div>
+      <div><b>{Number(data.materialsHeld.shards).toLocaleString()}</b><span>Ember Shards held by players</span></div>
+    </div>
+    <table className="adm-table"><thead><tr><th>Makes</th><th>Dust</th><th>Shards</th><th>Coins</th><th>Level</th><th>On</th><th>Owned by</th><th></th></tr></thead>
+      <tbody>{rows.map((r) => <tr key={r.key} className={r.enabled ? "" : "banned"}>
+        <td><b>{r.name || r.resultKey}</b><small className="adm-block">{r.resultType} · {r.rarity}{r.resultType === "item" ? (r.inShop ? " · also in shop" : " · forge only") : ""}</small></td>
+        <td className="narrow"><input type="number" min="0" value={r.dust} onChange={(e) => edit(r.key, "dust", e.target.value)} /></td>
+        <td className="narrow"><input type="number" min="0" value={r.shards} onChange={(e) => edit(r.key, "shards", e.target.value)} /></td>
+        <td className="narrow"><input type="number" min="0" value={r.coins} onChange={(e) => edit(r.key, "coins", e.target.value)} /></td>
+        <td className="narrow"><input type="number" min="1" max="100" value={r.minLevel} onChange={(e) => edit(r.key, "minLevel", e.target.value)} /></td>
+        <td><Toggle value={r.enabled} onChange={(v) => edit(r.key, "enabled", v)} /></td>
+        <td>{r.resultType === "item" ? r.ownedBy : "—"}</td>
+        <td className="adm-row-actions"><button disabled={!r.dirty} onClick={() => save(r)}>Save</button><button className="ghost" onClick={() => remove(r)}>Remove</button></td>
+      </tr>)}</tbody></table>
+    <div className="adm-panel">
+      <h3>Add a recipe</h3>
+      <div className="adm-grid">
+        <Field label="Makes a"><select value={add.resultType} onChange={(e) => setAdd({ ...add, resultType: e.target.value, resultKey: "" })}><option value="item">Item</option><option value="talisman">Talisman</option></select></Field>
+        <Field label={add.resultType === "item" ? "Item" : "Talisman"}><select value={add.resultKey} onChange={(e) => setAdd({ ...add, resultKey: e.target.value })}><option value="">Choose…</option>{choices.filter((x) => !taken.has(x.key)).map((x) => <option key={x.key} value={x.key}>{x.name} ({x.rarity}{x.kind ? `, ${x.kind}` : ""})</option>)}</select></Field>
+        <Field label="Rune Dust"><input type="number" min="0" value={add.dust} onChange={(e) => setAdd({ ...add, dust: e.target.value })} /></Field>
+        <Field label="Ember Shards"><input type="number" min="0" value={add.shards} onChange={(e) => setAdd({ ...add, shards: e.target.value })} /></Field>
+        <Field label="Coins (optional)"><input type="number" min="0" value={add.coins} onChange={(e) => setAdd({ ...add, coins: e.target.value })} /></Field>
+        <Field label="Level needed"><input type="number" min="1" max="100" value={add.minLevel} onChange={(e) => setAdd({ ...add, minLevel: e.target.value })} /></Field>
+      </div>
+      <p className="adm-hint">For a brand-new forge-only item: create it on the Items tab with "Sold in the shop" off, then add its recipe here.</p>
+      <div className="adm-actions"><button disabled={!add.resultKey} onClick={create}>Add recipe</button></div>
+    </div>
   </>;
 }
 
