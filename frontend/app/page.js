@@ -862,7 +862,7 @@ function Auth({ onSubmit, loading }) {
 }
 
 function ClassSelection({ classes, loading, onChoose }) {
-  return <section className="panel class-panel"><div className="eyebrow">INITIATION RITE</div><h2>Choose your class</h2><p className="step-help">Your path begins here. Choose the magic that will define your legend.</p><p className="muted">This choice is permanent for the season.</p>{classes.length === 0 ? <p>Loading classes…</p> : <div className="cards">{classes.map((item) => <article className={`card class-card ${item.name.toLowerCase()}`} key={item.name}><div className="class-glyph">{item.runes?.[0]?.symbol || item.name.slice(0, 1)}</div><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p><strong>Core rule</strong><br />{item.coreRule}</p><ul>{item.runes.map((rune) => <li key={rune.name}><strong className="rune-symbol">{rune.symbol}</strong> <span>{rune.name} — {rune.meaning}</span></li>)}</ul><button disabled={loading} onClick={() => onChoose(item.name)}>{loading ? "Saving…" : `Choose ${item.name}`}</button></article>)}</div>}</section>;
+  return <section className="panel class-panel"><div className="eyebrow">INITIATION RITE</div><h2>Choose your class</h2><p className="step-help">Your path begins here. Choose the magic that will define your legend.</p><p className="muted">This choice is permanent for the season.</p>{classes.length === 0 ? <p>Loading classes…</p> : <div className="cards">{classes.map((item) => <article className={`card class-card ${item.name.toLowerCase()}`} key={item.name}><ClassPortrait item={item} /><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p><strong>Core rule</strong><br />{item.coreRule}</p><ul>{item.runes.map((rune) => <li key={rune.name}><strong className="rune-symbol">{rune.symbol}</strong> <span>{rune.name} — {rune.meaning}</span></li>)}</ul><button disabled={loading} onClick={() => onChoose(item.name)}>{loading ? "Saving…" : `Choose ${item.name}`}</button></article>)}</div>}</section>;
 }
 
 function StatChips({ stats, attributes, compact = false }) {
@@ -915,7 +915,7 @@ function RealmPage({ page, content, profile, classes, league, realm, busy, notic
     {notice && <div className="message" role="status">{notice}</div>}
     {loading && <p className="muted">Loading from the realm…</p>}
     {page === "characters" && <p className="muted page-note">The four paths of rune magic. Your class is set when you create your mage.</p>}
-    {page === "characters" && <div className="cards">{classes.map((item) => <article className="card" key={item.name}><div className="class-glyph">{item.runes?.[0]?.symbol || item.name.slice(0, 1)}</div><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p>{item.coreRule}</p><p className="rune-row">{item.runes?.map((rune) => <span key={rune.name} title={`${rune.name} — ${rune.meaning}`}>{rune.symbol}</span>)}</p><span className="muted">{item.name === profile.className ? "YOUR ACTIVE CLASS" : "AVAILABLE LORE"}</span></article>)}</div>}
+    {page === "characters" && <div className="cards">{classes.map((item) => <article className={`card class-card ${item.name.toLowerCase()}`} key={item.name}><ClassPortrait item={item} /><h3>{item.name}</h3><p className="class-playstyle">{item.playstyle}</p><p>{item.coreRule}</p><p className="rune-row">{item.runes?.map((rune) => <span key={rune.name} title={`${rune.name} — ${rune.meaning}`}>{rune.symbol}</span>)}</p><span className="muted">{item.name === profile.className ? "YOUR ACTIVE CLASS" : "AVAILABLE LORE"}</span></article>)}</div>}
     {realm && page === "shop" && <ShopPanel realm={realm} busy={busy} attributes={attributes} slotName={slotName} onAction={onAction} />}
     {realm && page === "quests" && objectiveCards("quest")}
     {realm && page === "missions" && objectiveCards("mission")}
@@ -2047,6 +2047,15 @@ function ItemArt({ item, className }) {
   return <span className={`${className} ${failed ? "" : "has-art"}`}>
     {failed ? item?.icon : <img src={src} alt="" draggable={false} loading="lazy" onError={() => { missingItemArt.add(src); setFailed(true); }} />}
   </span>;
+}
+// The class picture at /characters/<class>.png on a class card, or its rune until a picture exists.
+function ClassPortrait({ item }) {
+  const key = item.name.toLowerCase();
+  const [failed, setFailed] = useState(missingArt.has(key));
+  if (failed) return <div className="class-glyph">{item.runes?.[0]?.symbol || item.name.slice(0, 1)}</div>;
+  return <div className="class-portrait" aria-hidden="true">
+    <img src={`/characters/${key}.png`} alt="" draggable={false} loading="lazy" onError={() => { missingArt.add(key); setFailed(true); }} />
+  </div>;
 }
 function MageFigure({ cls, flip, pose, art: forced }) {
   const key = (cls || "Flamecaller").toLowerCase();

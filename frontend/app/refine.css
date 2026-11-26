@@ -705,3 +705,16 @@ body:has(.auth-panel) .brand-lockup>div{display:grid;justify-items:center}
 .duel-finished .result-rows{display:flex!important;flex-wrap:wrap}
 .duel-finished .result-rows>div{flex:1 1 100px}
 .duel-finished .result-rows div:has(.result-drops){flex-basis:100%;order:9}
+
+/* ---------- class portraits on the class cards ---------- */
+.class-card{--cls:#8aa4ff;display:flex;flex-direction:column;padding-top:0!important;overflow:hidden}
+.class-card.flamecaller{--cls:#ff6a3d}.class-card.frostwarden{--cls:#5fb4ff}.class-card.fateweaver{--cls:#e8b65a}.class-card.gravebound{--cls:#a46bff}
+.class-portrait{position:relative;height:300px;margin:0 -20px 12px;display:flex;align-items:flex-end;justify-content:center;
+  background:radial-gradient(60% 70% at 50% 62%,color-mix(in srgb,var(--cls) 30%,transparent),transparent 70%),linear-gradient(180deg,#0b0e13 0%,#141923 100%);
+  border-bottom:1px solid color-mix(in srgb,var(--cls) 45%,transparent)}
+.class-portrait img{height:100%;width:auto;max-width:100%;object-fit:contain;object-position:center bottom;filter:drop-shadow(0 8px 18px #000a);transition:transform .25s ease}
+.class-card:hover .class-portrait img{transform:translateY(-4px) scale(1.02)}
+.class-card h3{color:var(--r-text,#e8ecf3)}
+.class-card .class-playstyle{color:var(--cls)!important}
+.class-card>button{margin-top:auto}
+@media (max-width:600px){.class-portrait{height:240px;margin:0 -16px 10px}}
