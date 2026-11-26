@@ -2896,7 +2896,8 @@ function CombatScreen({ settings = DEFAULT_SETTINGS, content, combat, onSubmit, 
       : null}
 
     <footer className="duel-controls">
-      {finished ? <div className="duel-finished">
+      {finished ? <div className={`duel-finished ${shown.draw ? "is-draw" : shown.winner === "me" ? "is-win" : "is-loss"}`}>
+        <span className="duel-finished-tag">{combat.practice ? "Practice duel" : combat.mode === "friend" ? "Friend duel" : combat.mode === "casual" ? "Casual duel" : "Ranked duel"}</span>
         <h3>{shown.draw ? "Draw" : shown.winner === "me" ? "Victory!" : "Defeat"}</h3>
         <p>{tutorial ? "Tutorial complete. You are ready for the arena." : combat.practice ? "Practice duel against the Shade. Nothing in your league or quests has changed." : combat.mode === "friend" ? "Friend duel. Nothing in your league, rating or coins has changed." : combat.mode === "casual" ? "Casual duel. No league points or rating change." : shown.draw ? "Both mages fell together. No league points change." : "The duel is over. Here is what it changed."}</p>
         <ResultSummary combat={combat} onLoadRounds={onLoadRounds} />
